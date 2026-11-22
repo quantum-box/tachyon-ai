@@ -1,73 +1,119 @@
 import AVFoundation
 
 /// Captures the default microphone as 24 kHz mono PCM16 (the Realtime API input format).
-final class AudioCapture {
-    /// Raw little-endian PCM16 chunks. Called on the audio thread.
+///
+/// Uses a capture session rather than `AVAudioEngine`: the engine ties input and output
+/// together and delivers silence when the two run at different sample rates, which is
+/// what happens with Bluetooth headsets (24 kHz microphone, 48 kHz playback).
+final class AudioCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+    /// Raw little-endian PCM16 chunks. Called on the capture queue.
     var onChunk: ((Data) -> Void)?
-    /// Input level 0...1. Called on the audio thread.
+    /// Input level 0...1. Called on the capture queue.
     var onLevel: ((Float) -> Void)?
 
     static let sampleRate: Double = 24_000
 
-    private let engine = AVAudioEngine()
-    private var converter: AVAudioConverter?
-    private let outputFormat = AVAudioFormat(
-        commonFormat: .pcmFormatInt16, sampleRate: AudioCapture.sampleRate, channels: 1, interleaved: true)!
+    /// What one recording looked like, for telling "no audio arrived" from "it was silent".
+    struct Summary {
+        /// The microphone and its own sample rate, e.g. "AirPods Pro 24000Hz".
+        var input = "-"
+        var buffers = 0
+        /// Loudest input level seen, 0...1.
+        var peak: Float = 0
+        /// The app's microphone input was muted when the recording started.
+        var wasMuted = false
+
+        /// Audio arrived, but all of it was digital silence.
+        var wasSilent: Bool { buffers > 10 && peak == 0 }
+    }
+
+    private var session: AVCaptureSession?
+    private let captureQueue = DispatchQueue(label: "one.tachy.ai.audio-capture")
+    /// Starting and stopping a session blocks, so it is kept off the main thread.
+    private let controlQueue = DispatchQueue(label: "one.tachy.ai.audio-control")
+
+    /// Guards `summary`, which the capture queue and the main thread share.
+    private let lock = NSLock()
+    private var summary = Summary()
 
     enum CaptureError: LocalizedError {
         case noInput
         var errorDescription: String? { "マイク入力が見つかりません" }
     }
 
+    /// A new session every time, so the microphone that is the default right now is used.
     func start() throws {
-        let input = engine.inputNode
-        let inputFormat = input.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0,
-              let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
+        guard let device = AVCaptureDevice.default(for: .audio),
+              let input = try? AVCaptureDeviceInput(device: device) else {
             throw CaptureError.noInput
         }
-        self.converter = converter
-
-        input.installTap(onBus: 0, bufferSize: 2400, format: inputFormat) { [weak self] buffer, _ in
-            self?.process(buffer)
+        let session = AVCaptureSession()
+        let output = AVCaptureAudioDataOutput()
+        // The session converts from whatever the microphone delivers.
+        output.audioSettings = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: Self.sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+        ]
+        output.setSampleBufferDelegate(self, queue: captureQueue)
+        guard session.canAddInput(input), session.canAddOutput(output) else {
+            throw CaptureError.noInput
         }
-        engine.prepare()
-        try engine.start()
+        session.addInput(input)
+        session.addOutput(output)
+
+        // Headsets can mute the microphone (on AirPods, a press on the stem), and the
+        // muted state outlives the recording it was set in: every later recording is
+        // then silent. Holding the dictation key is a clear request to be heard, so
+        // this app's own input is unmuted. Other apps keep their own mute state.
+        let application = AVAudioApplication.shared
+        let wasMuted = application.isInputMuted
+        if wasMuted {
+            try? application.setInputMuted(false)
+        }
+
+        let rate = device.activeFormat.formatDescription.audioStreamBasicDescription?.mSampleRate ?? 0
+        lock.withLock {
+            summary = Summary()
+            summary.wasMuted = wasMuted
+            summary.input = "\(device.localizedName.replacingOccurrences(of: " ", with: "_"))_\(Int(rate))Hz"
+        }
+        self.session = session
+        controlQueue.async { session.startRunning() }
     }
 
-    func stop() {
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        converter = nil
+    @discardableResult
+    func stop() -> Summary {
+        if let session {
+            controlQueue.async { session.stopRunning() }
+        }
+        session = nil
+        return lock.withLock { summary }
     }
 
-    private func process(_ buffer: AVAudioPCMBuffer) {
-        guard let converter else { return }
-        let ratio = outputFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 32
-        guard let out = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else { return }
+    func captureOutput(
+        _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection
+    ) {
+        guard let block = sampleBuffer.dataBuffer, let data = try? block.dataBytes(), !data.isEmpty else { return }
 
-        var consumed = false
-        var error: NSError?
-        converter.convert(to: out, error: &error) { _, status in
-            if consumed {
-                status.pointee = .noDataNow
-                return nil
-            }
-            consumed = true
-            status.pointee = .haveData
-            return buffer
-        }
-        guard error == nil, out.frameLength > 0, let samples = out.int16ChannelData?[0] else { return }
-
-        let count = Int(out.frameLength)
+        let sampleCount = data.count / MemoryLayout<Int16>.size
         var sum: Float = 0
-        for i in 0..<count {
-            let s = Float(samples[i]) / Float(Int16.max)
-            sum += s * s
+        data.withUnsafeBytes { raw in
+            for sample in raw.bindMemory(to: Int16.self) {
+                let s = Float(sample) / Float(Int16.max)
+                sum += s * s
+            }
         }
-        let rms = (sum / Float(count)).squareRoot()
-        onLevel?(min(1, rms * 6))
-        onChunk?(Data(bytes: samples, count: count * MemoryLayout<Int16>.size))
+        let level = min(1, (sum / Float(max(sampleCount, 1))).squareRoot() * 6)
+        lock.withLock {
+            summary.buffers += 1
+            summary.peak = max(summary.peak, level)
+        }
+        onLevel?(level)
+        onChunk?(data)
     }
 }

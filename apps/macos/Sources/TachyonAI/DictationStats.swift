@@ -16,7 +16,7 @@ final class DictationStats: ObservableObject {
 
     /// Appends one line of timings (no transcript text) to
     /// `~/Library/Logs/TachyonAI/dictation.log`.
-    func log(_ metrics: RealtimeTranscriber.Metrics, liveInsert: Bool) {
+    func log(_ metrics: RealtimeTranscriber.Metrics, audio: AudioCapture.Summary, liveInsert: Bool) {
         guard let committed = metrics.committedAt else { return }
         func ms(_ date: Date?, since origin: Date) -> String {
             date.map { String(Int($0.timeIntervalSince(origin) * 1000)) } ?? "-"
@@ -35,6 +35,11 @@ final class DictationStats: ObservableObject {
             "confirmed_len=\(metrics.confirmedLength.map(String.init) ?? "-")",
             "match=\(metrics.matchedConfirmed.map(String.init) ?? "-")",
             "live=\(liveInsert)",
+            "sent_audio_ms=\(metrics.sentAudioMilliseconds)",
+            "mic=\(audio.input)",
+            "buffers=\(audio.buffers)",
+            "peak=\(String(format: "%.2f", audio.peak))",
+            "muted_at_start=\(audio.wasMuted)",
         ].joined(separator: " ") + "\n"
 
         let directory = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]

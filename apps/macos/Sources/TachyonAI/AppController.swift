@@ -38,6 +38,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Types the transcript as it arrives; nil when the text is pasted once at the end.
     private var live: LiveInserter?
     private var pressedAt: Date?
+    /// What the microphone delivered during the last recording, for the timing log.
+    private var lastAudio = AudioCapture.Summary()
     private var errorDismissal: DispatchWorkItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -114,7 +116,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.model.text = text
             }
         }
-        transcriber.onSettled = { DictationStats.shared.log($0, liveInsert: live != nil) }
+        transcriber.onSettled = { [weak self] metrics in
+            DictationStats.shared.log(metrics, audio: self?.lastAudio ?? AudioCapture.Summary(), liveInsert: live != nil)
+        }
         self.transcriber = transcriber
 
         pressedAt = Date()
@@ -151,7 +155,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func endDictation() {
         guard let transcriber, let pressedAt else { return }
-        audio.stop()
+        lastAudio = audio.stop()
         guard Date().timeIntervalSince(pressedAt) >= Self.minimumHold else {
             cancelDictation()
             return
@@ -188,6 +192,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.finishDictation(transcriber)
                     if !text.isEmpty {
                         TextInserter.insert(text)
+                    }
+                    // Nothing to paste because nothing was heard: say so instead of failing quietly.
+                    if self.lastAudio.wasSilent {
+                        self.show(DictationError.silentMicrophone)
                     }
                 } catch {
                     live?.finish()
@@ -268,6 +276,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !AXIsProcessTrustedWithOptions(prompt) {
             show(PermissionError.accessibility)
         }
+    }
+
+    private enum DictationError: LocalizedError {
+        case silentMicrophone
+        var errorDescription: String? { "マイクから音が届いていません (ミュートになっていないか確認してください)" }
     }
 
     private enum PermissionError: LocalizedError {

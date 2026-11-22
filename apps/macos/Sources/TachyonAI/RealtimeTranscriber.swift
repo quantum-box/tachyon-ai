@@ -40,6 +40,8 @@ final class RealtimeTranscriber {
     /// Timings of one dictation, for tuning how early the text can be pasted.
     struct Metrics {
         var startedAt = Date()
+        /// Milliseconds of audio actually sent to the server.
+        var sentAudioMilliseconds = 0
         /// The connection was already open when the key went down.
         var wasWarm = false
         /// Whether the pasted text equals the server-confirmed one (ignoring outer whitespace).
@@ -125,6 +127,8 @@ final class RealtimeTranscriber {
         sendJSON(["type": "input_audio_buffer.commit"])
         let committedAt = Date()
         metrics.committedAt = committedAt
+        // 24 kHz, 16-bit mono: 48 bytes per millisecond.
+        metrics.sentAudioMilliseconds = sentBytes / 48
 
         let quiet = Task { [weak self] in
             while !Task.isCancelled {
