@@ -70,6 +70,25 @@ enum Preferences {
 
     static let liveInsertKey = "liveInsert"
 
+    /// Tokens and cost of every reply received in this app, until reset.
+    static var totalUsage: TokenUsage {
+        get {
+            let defaults = UserDefaults.standard
+            return TokenUsage(
+                promptTokens: defaults.integer(forKey: "usagePromptTokens"),
+                completionTokens: defaults.integer(forKey: "usageCompletionTokens"),
+                totalTokens: defaults.integer(forKey: "usageTotalTokens"),
+                cost: defaults.object(forKey: "usageCost") as? Double)
+        }
+        set {
+            let defaults = UserDefaults.standard
+            defaults.set(newValue.promptTokens, forKey: "usagePromptTokens")
+            defaults.set(newValue.completionTokens, forKey: "usageCompletionTokens")
+            defaults.set(newValue.totalTokens, forKey: "usageTotalTokens")
+            defaults.set(newValue.cost, forKey: "usageCost")
+        }
+    }
+
     /// How dictated text is tidied before pasting. Fast (in-app) unless changed.
     static var cleanupMode: CleanupMode {
         get { UserDefaults.standard.string(forKey: cleanupModeKey).flatMap(CleanupMode.init) ?? .fast }

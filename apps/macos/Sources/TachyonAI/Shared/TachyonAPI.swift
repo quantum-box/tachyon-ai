@@ -16,6 +16,8 @@ enum AgentEvent {
     case text(String, source: TextSource)
     /// Answers the agent offers to its own question.
     case options([String])
+    /// Tokens and cost of one model round trip; a reply that uses tools has several.
+    case usage(TokenUsage)
     /// What the agent is doing right now (thinking, running a tool).
     case activity(String)
     case failure(String)
@@ -144,7 +146,8 @@ final class TachyonAPI {
     /// Never retried on failure: re-sending would run (and bill) the task again.
     /// Cancelling the consuming task closes the connection, which stops the run.
     func execute(
-        sessionID: String, task: String, model: String?, effort: ReasoningEffort
+        sessionID: String, task: String, model: String?, effort: ReasoningEffort,
+        attachments: [Attachment] = []
     ) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             let work = Task { @MainActor in
@@ -159,6 +162,15 @@ final class TachyonAPI {
                     ]
                     if let effort = effort.apiValue, ReasoningEffort.isSupported(by: model) {
                         body["reasoning_effort"] = effort
+                    }
+                    if !attachments.isEmpty {
+                        body["attachments"] = attachments.map { file in
+                            [
+                                "filename": file.filename,
+                                "content_type": file.contentType,
+                                "data": file.data.base64EncodedString(),
+                            ]
+                        }
                     }
                     var request = try makeRequest(
                         config, "POST", "v1/llms/sessions/\(sessionID)/agent/execute", body: body)
@@ -226,6 +238,12 @@ final class TachyonAPI {
                 events.append(.options(options))
             }
             return events
+        case "usage":
+            return [.usage(TokenUsage(
+                promptTokens: chunk["prompt_tokens"] as? Int ?? 0,
+                completionTokens: chunk["completion_tokens"] as? Int ?? 0,
+                totalTokens: chunk["total_tokens"] as? Int ?? 0,
+                cost: chunk["total_cost"] as? Double))]
         case "thinking":
             return chunk["is_finished"] as? Bool == true ? [] : [.activity("考え中…")]
         case "tool_call":

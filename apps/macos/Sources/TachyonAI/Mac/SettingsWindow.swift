@@ -48,6 +48,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
     case vocabulary
     case background
     case models
+    case usage
 
     var id: String { rawValue }
 
@@ -58,6 +59,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .vocabulary: return "用語辞書"
         case .background: return "背景情報"
         case .models: return "モデル"
+        case .usage: return "使用量"
         }
     }
 
@@ -68,6 +70,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .vocabulary: return "文字起こしで決まって間違う語を登録します。貼り付ける前に置き換えます。"
         case .background: return "あなたの仕事や使う言葉を書いておくと、聞き間違いを文脈から直します。"
         case .models: return "チャットのモデルメニューに表示するモデルを選びます。"
+        case .usage: return "チャットで使ったトークン数と料金を確認します。"
         }
     }
 
@@ -78,6 +81,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .vocabulary: return "character.book.closed.fill"
         case .background: return "person.text.rectangle.fill"
         case .models: return "sparkles"
+        case .usage: return "chart.bar.fill"
         }
     }
 
@@ -88,6 +92,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .vocabulary: return .orange
         case .background: return .blue
         case .models: return .purple
+        case .usage: return .green
         }
     }
 }
@@ -123,6 +128,7 @@ private struct SettingsView: View {
                 case .vocabulary: VocabularyPane()
                 case .background: BackgroundPane()
                 case .models: ModelsPane(model: model)
+                case .usage: UsagePane(model: model)
                 }
             }
             .formStyle(.grouped)

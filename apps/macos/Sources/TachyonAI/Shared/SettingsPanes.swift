@@ -28,6 +28,27 @@ struct TenantPane: View {
     }
 }
 
+/// What has been used: the open conversation, and everything through this app.
+struct UsagePane: View {
+    @ObservedObject var model: ChatModel
+
+    var body: some View {
+        Section {
+            LabeledContent("今の会話", value: model.transcript.usage?.summary ?? "—")
+            LabeledContent("累計", value: model.totalUsage.totalTokens > 0 ? model.totalUsage.summary : "—")
+        } footer: {
+            Text("累計は、このアプリで受け取った返答の合計です。料金は API が金額を返したときだけ含まれます (米ドル)。")
+        }
+
+        Section {
+            Button("累計をリセット", role: .destructive) {
+                model.resetTotalUsage()
+            }
+            .disabled(model.totalUsage.totalTokens == 0)
+        }
+    }
+}
+
 struct VocabularyPane: View {
     @ObservedObject private var vocabulary = Vocabulary.shared
 

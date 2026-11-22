@@ -12,6 +12,10 @@ struct ChatMessage: Identifiable {
     var failed = false
     /// Answers the agent offered to a question it asked.
     var options: [String] = []
+    /// Names of the files sent with a user message.
+    var attachments: [String] = []
+    /// What an assistant reply used, summed over its model round trips.
+    var usage: TokenUsage?
 }
 
 /// Builds the on-screen messages from agent events, the same way for a live turn
@@ -19,6 +23,16 @@ struct ChatMessage: Identifiable {
 struct Transcript {
     private(set) var messages: [ChatMessage] = []
     private var lastSource: AgentEvent.TextSource?
+
+    /// Tokens and cost of the whole conversation.
+    var usage: TokenUsage? {
+        messages.compactMap(\.usage).reduce(nil) { total, next in (total ?? TokenUsage()) + next }
+    }
+
+    mutating func appendUser(_ text: String, attachments: [String]) {
+        messages.append(ChatMessage(role: .user, text: text, attachments: attachments))
+        lastSource = nil
+    }
 
     mutating func apply(_ event: AgentEvent) {
         switch event {
@@ -35,6 +49,9 @@ struct Transcript {
             lastSource = source
         case .options(let options):
             messages[replyIndex()].options = options
+        case .usage(let usage):
+            let index = replyIndex()
+            messages[index].usage = (messages[index].usage ?? TokenUsage()) + usage
         case .failure(let message):
             let index = replyIndex()
             if !messages[index].text.isEmpty {
@@ -68,10 +85,22 @@ final class ChatModel: ObservableObject {
         didSet { Preferences.lastSessionID = sessionID }
     }
     @Published var draft = ""
+    /// Files waiting to go out with the next message.
+    @Published private(set) var attachments: [Attachment] = []
+    @Published var attachmentError: String?
     @Published private(set) var isRunning = false
     @Published private(set) var isLoadingHistory = false
     /// What the agent is doing while no text is arriving.
     @Published private(set) var activity: String?
+
+    /// Everything used through this app since the total was last reset.
+    @Published private(set) var totalUsage = Preferences.totalUsage {
+        didSet { Preferences.totalUsage = totalUsage }
+    }
+
+    func resetTotalUsage() {
+        totalUsage = TokenUsage()
+    }
 
     @Published private(set) var models: [ModelInfo] = []
     /// The model new messages are sent to; nil until the default is known.
@@ -122,12 +151,28 @@ final class ChatModel: ObservableObject {
 
     // MARK: - Sending
 
-    /// Sends `text`, or the draft when none is given.
+    /// Whether there is something to send: text, or files on their own.
+    var canSend: Bool {
+        !isRunning && !isLoadingHistory
+            && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty)
+    }
+
+    /// Sends `text`, or the draft (with its attachments) when none is given.
     func send(_ text: String? = nil) {
-        let task = (text ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
+        var task = (text ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
+        // Attachments belong to the draft, not to a tapped suggestion or answer.
+        let files = text == nil ? attachments : []
+        if task.isEmpty, !files.isEmpty {
+            // The API needs a task; files alone are a request to look at them.
+            task = "添付したファイルを確認してください。"
+        }
         guard !task.isEmpty, !isRunning, !isLoadingHistory else { return }
-        if text == nil { draft = "" }
-        transcript.apply(.user(task))
+        if text == nil {
+            draft = ""
+            attachments = []
+            attachmentError = nil
+        }
+        transcript.appendUser(task, attachments: files.map(\.filename))
         isRunning = true
         activity = "接続中…"
 
@@ -144,9 +189,14 @@ final class ChatModel: ObservableObject {
                     sessions.insert(SessionSummary(id: sessionID, name: nil, updatedAt: Date()), at: 0)
                 }
                 let events = api.execute(
-                    sessionID: sessionID, task: task, model: selectedModel, effort: effort)
+                    sessionID: sessionID, task: task, model: selectedModel, effort: effort,
+                    attachments: files)
                 for try await event in events {
                     guard generation == self.generation else { return }
+                    if case .usage(let usage) = event {
+                        // Only live replies count; a conversation reopened from history does not.
+                        totalUsage = totalUsage + usage
+                    }
                     if case .activity(let description) = event {
                         activity = description
                     } else {
@@ -170,6 +220,36 @@ final class ChatModel: ObservableObject {
             activity = nil
             // The server names a conversation after its first turn.
             await refreshSessions()
+        }
+    }
+
+    // MARK: - Attachments
+
+    func attach(urls: [URL]) {
+        add(urls.map { url in { try AttachmentLoader.load(url: url) } })
+    }
+
+    func attach(imageData: Data, name: String) {
+        add([{ try AttachmentLoader.load(imageData: imageData, name: name) }])
+    }
+
+    func removeAttachment(_ id: Attachment.ID) {
+        attachments.removeAll { $0.id == id }
+        attachmentError = nil
+    }
+
+    /// Adds what loads and fits; the first problem is reported, the rest still go in.
+    private func add(_ loaders: [() throws -> Attachment]) {
+        attachmentError = nil
+        for load in loaders {
+            do {
+                let file = try load()
+                let total = attachments.reduce(file.data.count) { $0 + $1.data.count }
+                guard total <= AttachmentLoader.maximumTotalBytes else { throw AttachmentError.tooLarge }
+                attachments.append(file)
+            } catch {
+                attachmentError = attachmentError ?? error.localizedDescription
+            }
         }
     }
 

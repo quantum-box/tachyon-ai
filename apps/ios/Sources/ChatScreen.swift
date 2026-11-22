@@ -97,6 +97,10 @@ struct ChatScreen: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { composer }
             .background { AppBackdrop() }
             .navigationTitle(currentTitle)
+            .dropDestination(for: URL.self) { urls, _ in
+                model.attach(urls: urls)
+                return true
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -205,6 +209,7 @@ struct ChatScreen: View {
                     .font(.footnote)
                     .foregroundStyle(.red)
             }
+            AttachmentChips(model: model)
             if dictation.phase != .idle {
                 dictationStatus
             } else {
@@ -215,6 +220,7 @@ struct ChatScreen: View {
             }
 
             HStack(spacing: 8) {
+                AttachmentButton(model: model)
                 ModelControl(model: model) { showingSettings = true }
                 Spacer(minLength: 0)
                 microphoneButton
@@ -290,8 +296,7 @@ struct ChatScreen: View {
                 .contentTransition(.symbolEffect(.replace))
         }
         .buttonStyle(.plain)
-        .disabled(!model.isRunning
-            && (model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || dictation.phase != .idle))
+        .disabled(!model.isRunning && (!model.canSend || dictation.phase != .idle))
         .accessibilityLabel(model.isRunning ? "停止" : "送信")
     }
 }

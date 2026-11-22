@@ -33,6 +33,9 @@ struct SettingsScreen: View {
                 NavigationLink("チャットのモデル") {
                     Form { ModelsPane(model: model) }.navigationTitle("モデル")
                 }
+                NavigationLink("使用量") {
+                    Form { UsagePane(model: model) }.navigationTitle("使用量")
+                }
 
                 Section {
                     Button("ログアウト", role: .destructive) {

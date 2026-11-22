@@ -11,12 +11,23 @@ struct MessageRow: View {
         case .user:
             HStack {
                 Spacer(minLength: 56)
-                Text(message.text)
-                    .textSelection(.enabled)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .glassEffect(.regular.tint(.accentColor).interactive(), in: .rect(cornerRadius: 18))
+                VStack(alignment: .trailing, spacing: 6) {
+                    ForEach(message.attachments, id: \.self) { name in
+                        Label(name, systemImage: "paperclip")
+                            .font(.caption)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .glassEffect(.regular, in: .capsule)
+                    }
+                    Text(message.text)
+                        .textSelection(.enabled)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .glassEffect(.regular.tint(.accentColor).interactive(), in: .rect(cornerRadius: 18))
+                }
             }
         case .assistant:
             // Empty until the first text arrives; the activity capsule stands in for it.

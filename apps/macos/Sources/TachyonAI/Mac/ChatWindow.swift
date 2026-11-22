@@ -168,6 +168,11 @@ private struct ChatView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { composer }
             .frame(minWidth: 380, minHeight: 420)
             .navigationTitle(currentTitle)
+            // Files can also be dropped anywhere on the conversation.
+            .dropDestination(for: URL.self) { urls, _ in
+                model.attach(urls: urls)
+                return true
+            }
     }
 
     private var currentTitle: String {
@@ -264,6 +269,7 @@ private struct ChatView: View {
     /// One glass panel holding the message field and, under it, the controls.
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
+            AttachmentChips(model: model)
             TextField("メッセージ", text: $model.draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .zoomedFont(.body)
@@ -274,6 +280,7 @@ private struct ChatView: View {
                 .padding(.top, 4)
 
             HStack(spacing: 8) {
+                AttachmentButton(model: model)
                 ModelControl(model: model, openSettings: openSettings)
                 Spacer(minLength: 0)
                 sendButton
@@ -303,7 +310,7 @@ private struct ChatView: View {
                 .contentTransition(.symbolEffect(.replace))
         }
         .buttonStyle(.plain)
-        .disabled(!model.isRunning && model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .disabled(!model.isRunning && !model.canSend)
         .help(model.isRunning ? "停止" : "送信")
     }
 }
