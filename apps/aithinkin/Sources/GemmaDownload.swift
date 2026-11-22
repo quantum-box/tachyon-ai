@@ -61,6 +61,16 @@ final class GemmaDownload: NSObject, ObservableObject {
         state = .missing
     }
 
+    private func install(_ staged: URL) throws {
+        var destination = Self.fileURL
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: staged, to: destination)
+        // It can be downloaded again, so it stays out of the device backup.
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? destination.setResourceValues(values)
+    }
+
     private func finish(_ state: State, error: String? = nil) {
         self.state = state
         self.error = error
@@ -89,31 +99,37 @@ extension GemmaDownload: URLSessionDownloadDelegate {
     nonisolated func urlSession(
         _ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL
     ) {
-        // The temporary file is removed when this method returns, so it is moved here.
+        // The temporary file is removed when this method returns, so it is set aside here.
+        // It only becomes the model on the main actor, where it cannot cross a delete.
         var failure: String?
+        let staged = Self.fileURL.appendingPathExtension("download-\(UUID().uuidString)")
         if let status = (downloadTask.response as? HTTPURLResponse)?.statusCode, status != 200, status != 206 {
             failure = "ダウンロードできませんでした (HTTP \(status))。"
         } else {
             do {
-                var destination = Self.fileURL
                 try FileManager.default.createDirectory(
-                    at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try? FileManager.default.removeItem(at: destination)
-                try FileManager.default.moveItem(at: location, to: destination)
-                // It can be downloaded again, so it stays out of the device backup.
-                var values = URLResourceValues()
-                values.isExcludedFromBackup = true
-                try? destination.setResourceValues(values)
+                    at: staged.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.moveItem(at: location, to: staged)
             } catch {
                 failure = "モデルを保存できませんでした。\(error.localizedDescription)"
             }
         }
         Task { @MainActor [failure] in
-            guard downloadTask === self.task else { return }
+            // Cancelled or deleted while the file was being set aside.
+            guard downloadTask === self.task else {
+                try? FileManager.default.removeItem(at: staged)
+                return
+            }
             if let failure {
                 self.finish(.missing, error: failure)
-            } else {
+                return
+            }
+            do {
+                try self.install(staged)
                 self.finish(.ready)
+            } catch {
+                try? FileManager.default.removeItem(at: staged)
+                self.finish(.missing, error: "モデルを保存できませんでした。\(error.localizedDescription)")
             }
         }
     }
