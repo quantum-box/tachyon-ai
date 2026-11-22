@@ -9,7 +9,6 @@ struct ChatScreen: View {
 
     @State private var column = NavigationSplitViewColumn.detail
     @State private var showingSettings = false
-    @State private var showingEffort = false
     @FocusState private var inputFocused: Bool
 
     private static let suggestions = [
@@ -216,8 +215,7 @@ struct ChatScreen: View {
             }
 
             HStack(spacing: 8) {
-                modelMenu
-                effortButton
+                ModelControl(model: model) { showingSettings = true }
                 Spacer(minLength: 0)
                 microphoneButton
                 sendButton
@@ -250,58 +248,6 @@ struct ChatScreen: View {
         }
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
-    }
-
-    private var modelMenu: some View {
-        Menu {
-            Picker("モデル", selection: $model.selectedModel) {
-                ForEach(model.providers, id: \.self) { provider in
-                    let offered = model.visibleModels.filter { $0.provider == provider }
-                    if !offered.isEmpty {
-                        Section(provider) {
-                            ForEach(offered) { info in
-                                Text(info.name).tag(Optional(info.id))
-                            }
-                        }
-                    }
-                }
-            }
-            Divider()
-            Button("表示するモデルを選ぶ…") { showingSettings = true }
-        } label: {
-            HStack(spacing: 4) {
-                Text(modelTitle).lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold))
-            }
-            .font(.footnote.weight(.medium))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.quaternary, in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(model.models.isEmpty)
-    }
-
-    private var modelTitle: String {
-        guard let id = model.selectedModel else { return "モデル" }
-        return model.models.first { $0.id == id }?.name ?? id
-    }
-
-    private var effortButton: some View {
-        Button {
-            showingEffort.toggle()
-        } label: {
-            Text(model.effortApplies && model.effort != .standard ? "思考量: \(model.effort.title)" : "思考量")
-                .font(.footnote.weight(.medium))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.quaternary, in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $showingEffort) {
-            EffortPicker(effort: $model.effort, applies: model.effortApplies)
-                .presentationCompactAdaptation(.popover)
-        }
     }
 
     private var microphoneButton: some View {

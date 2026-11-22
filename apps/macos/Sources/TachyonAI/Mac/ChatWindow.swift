@@ -73,7 +73,6 @@ private struct ChatView: View {
     @ObservedObject var account: Account
     let openSettings: () -> Void
     @FocusState private var inputFocused: Bool
-    @State private var showingEffort = false
 
     private static let suggestions = [
         "今日やることを整理したい",
@@ -275,8 +274,7 @@ private struct ChatView: View {
                 .padding(.top, 4)
 
             HStack(spacing: 8) {
-                modelMenu
-                effortButton
+                ModelControl(model: model, openSettings: openSettings)
                 Spacer(minLength: 0)
                 sendButton
             }
@@ -287,58 +285,6 @@ private struct ChatView: View {
         .padding(.bottom, 14)
         .padding(.top, 6)
         .animation(.bouncy(duration: 0.35), value: model.isRunning)
-    }
-
-    private var modelMenu: some View {
-        Menu {
-            Picker("モデル", selection: $model.selectedModel) {
-                ForEach(model.providers, id: \.self) { provider in
-                    let offered = model.visibleModels.filter { $0.provider == provider }
-                    if !offered.isEmpty {
-                        Section(provider) {
-                            ForEach(offered) { info in
-                                Text(info.name).tag(Optional(info.id))
-                            }
-                        }
-                    }
-                }
-            }
-            .pickerStyle(.inline)
-            .labelsHidden()
-
-            Divider()
-            Button("表示するモデルを選ぶ…", action: openSettings)
-        } label: {
-            Text(modelTitle).lineLimit(1)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
-        .fixedSize()
-        .disabled(model.models.isEmpty)
-        .help("モデル")
-    }
-
-    private var modelTitle: String {
-        guard let id = model.selectedModel else { return "モデル" }
-        return model.models.first { $0.id == id }?.name ?? id
-    }
-
-    private var effortButton: some View {
-        Button {
-            showingEffort.toggle()
-        } label: {
-            HStack(spacing: 4) {
-                Text(model.effortApplies && model.effort != .standard ? "思考量: \(model.effort.title)" : "思考量")
-                Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
-            }
-        }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
-        .popover(isPresented: $showingEffort, arrowEdge: .top) {
-            EffortPicker(effort: $model.effort, applies: model.effortApplies)
-        }
-        .help("思考量")
     }
 
     private var sendButton: some View {

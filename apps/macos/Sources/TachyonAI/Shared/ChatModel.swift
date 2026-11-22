@@ -96,6 +96,12 @@ final class ChatModel: ObservableObject {
     func zoomOut() { zoom = Zoom.clamped(zoom - Zoom.step) }
     func resetZoom() { zoom = 1 }
 
+    /// The selected model's display name, for buttons and titles.
+    var selectedModelName: String {
+        guard let id = selectedModel else { return "モデル" }
+        return models.first { $0.id == id }?.name ?? id
+    }
+
     /// Whether the thinking-effort setting does anything for the selected model.
     var effortApplies: Bool {
         selectedModel.map(ReasoningEffort.isSupported) ?? false
