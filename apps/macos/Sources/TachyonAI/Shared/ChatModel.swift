@@ -61,6 +61,8 @@ struct Transcript {
 final class ChatModel: ObservableObject {
     @Published private(set) var transcript = Transcript()
     @Published private(set) var sessions: [SessionSummary] = []
+    /// Why the conversation list could not be loaded, if it could not.
+    @Published private(set) var sessionsError: String?
     /// The open conversation; nil for a new chat that has not been sent yet.
     @Published private(set) var sessionID: String? {
         didSet { Preferences.lastSessionID = sessionID }
@@ -270,7 +272,15 @@ final class ChatModel: ObservableObject {
     }
 
     func refreshSessions() async {
-        guard let latest = try? await api.listSessions() else { return }
+        let latest: [SessionSummary]
+        do {
+            latest = try await api.listSessions()
+            sessionsError = nil
+        } catch {
+            // Shown in place of the list: an empty history and a failed request look alike otherwise.
+            sessionsError = error.localizedDescription
+            return
+        }
         // A conversation created a moment ago may not be listed by the server yet.
         if let sessionID, !latest.contains(where: { $0.id == sessionID }),
            let current = sessions.first(where: { $0.id == sessionID }) {

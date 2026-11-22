@@ -13,14 +13,36 @@ enum Zoom {
     }
 }
 
-/// The standard macOS text sizes, in points at 100%.
-enum TextSize: CGFloat {
-    case caption = 10
-    case callout = 12
-    case body = 13
-    case title3 = 15
-    case title2 = 17
-    case title = 22
+/// The platform's standard text sizes, in points at 100%.
+enum TextSize {
+    case caption
+    case callout
+    case body
+    case title3
+    case title2
+    case title
+
+    var points: CGFloat {
+        #if os(macOS)
+        switch self {
+        case .caption: return 10
+        case .callout: return 12
+        case .body: return 13
+        case .title3: return 15
+        case .title2: return 17
+        case .title: return 22
+        }
+        #else
+        switch self {
+        case .caption: return 12
+        case .callout: return 16
+        case .body: return 17
+        case .title3: return 20
+        case .title2: return 22
+        case .title: return 28
+        }
+        #endif
+    }
 }
 
 private struct ZoomKey: EnvironmentKey {
@@ -41,7 +63,7 @@ private struct ZoomedFont: ViewModifier {
     let design: Font.Design
 
     func body(content: Content) -> some View {
-        content.font(.system(size: size.rawValue * zoom, weight: weight, design: design))
+        content.font(.system(size: size.points * zoom, weight: weight, design: design))
     }
 }
 

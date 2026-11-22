@@ -40,6 +40,8 @@ macOS 26 以降が必要 (Liquid Glass を使うため)。
 
 ## 開発
 
+ソースは `Sources/TachyonAI/Mac` (Mac 専用) と `Sources/TachyonAI/Shared` (iOS 版と共通) に分かれている。iOS 版は `apps/ios`。
+
 `./scripts/dev.sh` を端末で動かしておくと、`./scripts/build-app.sh` で新しいビルドができるたびにアプリが自動で再起動し、開いていた会話も復元される。
 
 ## 設定 (任意)

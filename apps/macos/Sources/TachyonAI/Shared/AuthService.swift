@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import AuthenticationServices
 import CryptoKit
 
@@ -6,6 +10,12 @@ import CryptoKit
 ///
 /// Same flow as `tachyon auth login`: Cognito authorization code + PKCE, with the redirect
 /// received on a loopback port.
+/// A tenant (operator) the user can work in.
+struct Tenant: Identifiable, Equatable {
+    let id: String
+    var name: String
+}
+
 @MainActor
 final class AuthService: NSObject, ASWebAuthenticationPresentationContextProviding {
     struct Credentials: Codable {
@@ -147,7 +157,9 @@ final class AuthService: NSObject, ASWebAuthenticationPresentationContextProvidi
             self.webSession = nil
         }
 
+        #if os(macOS)
         NSApp.activate(ignoringOtherApps: true)
+        #endif
         guard webSession.start() else { throw AuthError.server("ログイン画面を開けませんでした") }
 
         let code = try await waitForCode(callback, state: state)
@@ -157,7 +169,8 @@ final class AuthService: NSObject, ASWebAuthenticationPresentationContextProvidi
             "redirect_uri": redirectURI,
             "code_verifier": verifier,
         ])
-        let operatorID = try? await defaultOperator(settings, accessToken: tokens.access_token)
+        // Until the user picks one, the first tenant they belong to (same default as the CLI).
+        let operatorID = try? await tenants(settings, accessToken: tokens.access_token).first?.id
         store(Credentials(
             accessToken: tokens.access_token,
             refreshToken: tokens.refresh_token,
@@ -171,7 +184,14 @@ final class AuthService: NSObject, ASWebAuthenticationPresentationContextProvidi
     }
 
     nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        MainActor.assumeIsolated { NSApp.keyWindow ?? ASPresentationAnchor() }
+        MainActor.assumeIsolated {
+            #if os(macOS)
+            return NSApp.keyWindow ?? ASPresentationAnchor()
+            #else
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            return scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? ASPresentationAnchor()
+            #endif
+        }
     }
 
     private func waitForCode(_ callback: LoopbackCallback, state: String) async throws -> String {
@@ -220,14 +240,43 @@ final class AuthService: NSObject, ASWebAuthenticationPresentationContextProvidi
         return tokens
     }
 
-    /// The first tenant the user belongs to (same default as the CLI).
-    private func defaultOperator(_ settings: Settings, accessToken: String) async throws -> String {
+    // MARK: - Tenants
+
+    /// The tenant requests are made for: the one in config.json, or the one picked in the app.
+    var tenantID: String? {
+        Settings.load().operatorID ?? credentials?.operatorID
+    }
+
+    /// Whether config.json pins the tenant, which the in-app choice cannot override.
+    var tenantIsPinned: Bool {
+        Settings.load().operatorID != nil
+    }
+
+    /// Every tenant the signed-in user belongs to.
+    func tenants() async throws -> [Tenant] {
+        let settings = Settings.load()
+        let current = try await freshCredentials(settings)
+        return try await tenants(settings, accessToken: current.accessToken)
+    }
+
+    func selectTenant(_ id: String) {
+        guard var current = credentials, current.operatorID != id else { return }
+        current.operatorID = id
+        store(current)
+    }
+
+    private func tenants(_ settings: Settings, accessToken: String) async throws -> [Tenant] {
         var request = URLRequest(url: settings.apiURL.appendingPathComponent("v1/auth/operators/by-user"))
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (data, _) = try await URLSession.shared.data(for: request)
-        guard let operators = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-              let id = operators.first?["id"] as? String else { throw AuthError.noTenant }
-        return id
+        guard let operators = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw AuthError.noTenant
+        }
+        return operators.compactMap { item in
+            guard let id = item["id"] as? String else { return nil }
+            let name = item["name"] as? String ?? item["operator_name"] as? String ?? id
+            return Tenant(id: id, name: name.isEmpty ? id : name)
+        }
     }
 
     // MARK: - Storage

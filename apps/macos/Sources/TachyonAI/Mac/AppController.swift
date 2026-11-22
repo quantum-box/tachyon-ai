@@ -19,11 +19,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let audio = AudioCapture()
     private let auth = AuthService()
     private lazy var api = TachyonAPI(auth: auth)
+    private lazy var account = Account(auth: auth)
     private lazy var chatModel = ChatModel(api: api)
-    private lazy var chatWindow = ChatWindowController(model: chatModel) { [weak self] in
+    private lazy var chatWindow = ChatWindowController(model: chatModel, account: account) { [weak self] in
         self?.openSettingsWindow()
     }
-    private lazy var settingsWindow = SettingsWindowController(model: chatModel)
+    private lazy var settingsWindow = SettingsWindowController(model: chatModel, account: account)
     private var loginItem: NSMenuItem?
     private var launchAtLoginItem: NSMenuItem?
     private var cleanupItems: [CleanupMode: NSMenuItem] = [:]
@@ -64,8 +65,32 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fnKey.start()
 
         requestPermissions()
+        account.onChange = { [weak self] in
+            guard let self else { return }
+            self.updateLoginItem()
+            if self.account.isLoggedIn {
+                self.prepareStandby()
+            } else {
+                // The conversation on screen belonged to the account that just signed out.
+                self.chatModel.startNewChat()
+            }
+        }
+        account.onTenantChange = { [weak self] in
+            guard let self else { return }
+            // History, models and the open connection all belong to the previous tenant.
+            self.chatModel.startNewChat()
+            self.standby?.cancel()
+            self.standby = nil
+            self.prepareStandby()
+            Task {
+                await self.chatModel.refreshSessions()
+                await self.chatModel.refreshModels()
+            }
+        }
+        // Signed out: show the window with its sign-in button, rather than opening
+        // the sign-in page unasked.
         if !auth.isLoggedIn, Settings.load().apiKey == nil {
-            toggleLogin()
+            chatWindow.show()
         }
         prepareStandby()
         standbyTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
@@ -400,22 +425,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleLogin() {
-        if auth.isLoggedIn {
-            auth.logout()
-            updateLoginItem()
-            return
-        }
-        guard !auth.isLoggingIn else { return }
-        Task { @MainActor in
-            do {
-                try await auth.login()
-                prepareStandby()
-            } catch AuthService.AuthError.cancelled {
-                // The user closed the window; nothing to report.
-            } catch {
-                show(error)
-            }
-            updateLoginItem()
+        if account.isLoggedIn {
+            account.logout()
+        } else {
+            // Signing in happens in the chat window, behind its own button.
+            chatWindow.show()
         }
     }
 

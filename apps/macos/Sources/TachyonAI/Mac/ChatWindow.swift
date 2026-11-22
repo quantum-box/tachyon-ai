@@ -5,11 +5,13 @@ import SwiftUI
 @MainActor
 final class ChatWindowController {
     private let model: ChatModel
+    private let account: Account
     private let openSettings: () -> Void
     private var window: NSWindow?
 
-    init(model: ChatModel, openSettings: @escaping () -> Void) {
+    init(model: ChatModel, account: Account, openSettings: @escaping () -> Void) {
         self.model = model
+        self.account = account
         self.openSettings = openSettings
     }
 
@@ -17,7 +19,8 @@ final class ChatWindowController {
         if window == nil {
             // A hosting controller (not a bare hosting view) lets SwiftUI's toolbar and
             // title drive the window's own toolbar, which is drawn in Liquid Glass.
-            let hosting = NSHostingController(rootView: ChatView(model: model, openSettings: openSettings))
+            let hosting = NSHostingController(
+                rootView: ChatView(model: model, account: account, openSettings: openSettings))
             hosting.sceneBridgingOptions = [.toolbars, .title]
             // Otherwise the window grows to the split view's ideal size (the whole screen).
             hosting.sizingOptions = []
@@ -67,6 +70,7 @@ extension NSWindow {
 /// is Liquid Glass floating over a blurred view of the desktop.
 private struct ChatView: View {
     @ObservedObject var model: ChatModel
+    @ObservedObject var account: Account
     let openSettings: () -> Void
     @FocusState private var inputFocused: Bool
     @State private var showingEffort = false
@@ -78,6 +82,22 @@ private struct ChatView: View {
     ]
 
     var body: some View {
+        // An API key in config.json stands in for a signed-in user.
+        if account.isLoggedIn || Settings.load().apiKey != nil {
+            chat
+                .task(id: account.isLoggedIn) {
+                    await model.refreshSessions()
+                    await model.refreshModels()
+                }
+        } else {
+            LoginView(account: account)
+                .frame(minWidth: 380, minHeight: 420)
+                .background { WindowBackdrop().ignoresSafeArea() }
+                .navigationTitle("Tachyon AI")
+        }
+    }
+
+    private var chat: some View {
         NavigationSplitView {
             sidebar
         } detail: {
@@ -133,7 +153,9 @@ private struct ChatView: View {
         .scrollContentBackground(.hidden)
         .overlay {
             if model.sessions.isEmpty {
-                Text("履歴はまだありません")
+                Text(model.sessionsError ?? "履歴はまだありません")
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
                     .zoomedFont(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -340,54 +362,6 @@ private struct ChatView: View {
     }
 }
 
-/// The thinking-effort popover: the current level and a four-step slider.
-private struct EffortPicker: View {
-    @Binding var effort: ReasoningEffort
-    /// False when the selected model ignores the setting.
-    let applies: Bool
-
-    private static let gradient = LinearGradient(
-        colors: [Color(red: 0.55, green: 0.65, blue: 1), Color(red: 0.55, green: 0.3, blue: 0.95)],
-        startPoint: .leading, endPoint: .trailing)
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Text(effort.title)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(Self.gradient)
-                .contentTransition(.numericText())
-
-            Slider(value: level, in: 0...Double(ReasoningEffort.allCases.count - 1), step: 1)
-                .tint(Color(red: 0.55, green: 0.4, blue: 0.98))
-                .disabled(!applies)
-
-            HStack {
-                Text("速い")
-                Spacer()
-                Text("深い")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-            if !applies {
-                Text("選択中のモデルは思考量の指定に対応していません (対応: OpenAI の gpt-5 / gpt-6 系)。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(16)
-        .frame(width: 260)
-        .animation(.snappy, value: effort)
-    }
-
-    private var level: Binding<Double> {
-        Binding(
-            get: { Double(ReasoningEffort.allCases.firstIndex(of: effort) ?? 0) },
-            set: { effort = ReasoningEffort.allCases[Int($0.rounded())] })
-    }
-}
-
 /// Blurs whatever is behind the window (other apps, the desktop).
 private struct WindowBackdrop: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
@@ -400,50 +374,4 @@ private struct WindowBackdrop: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
-}
-
-private struct MessageRow: View {
-    let message: ChatMessage
-    /// Sends one of the offered answers; nil when the question can no longer be answered.
-    let onOption: ((String) -> Void)?
-
-    var body: some View {
-        switch message.role {
-        case .user:
-            HStack {
-                Spacer(minLength: 56)
-                Text(message.text)
-                    .textSelection(.enabled)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .glassEffect(.regular.tint(.accentColor).interactive(), in: .rect(cornerRadius: 18))
-            }
-        case .assistant:
-            // Empty until the first text arrives; the activity capsule stands in for it.
-            if !message.text.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        MarkdownView(message.text)
-                            .foregroundStyle(message.failed ? Color.red : Color.primary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .glassEffect(
-                                message.failed ? .regular.tint(.red.opacity(0.25)) : .regular,
-                                in: .rect(cornerRadius: 18))
-                        Spacer(minLength: 32)
-                    }
-                    if let onOption, !message.options.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(message.options, id: \.self) { option in
-                                Button(option) { onOption(option) }
-                                    .buttonStyle(.glass)
-                                    .buttonBorderShape(.capsule)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 }

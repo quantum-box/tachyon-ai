@@ -6,15 +6,17 @@ import SwiftUI
 @MainActor
 final class SettingsWindowController {
     private let model: ChatModel
+    private let account: Account
     private var window: NSWindow?
 
-    init(model: ChatModel) {
+    init(model: ChatModel, account: Account) {
         self.model = model
+        self.account = account
     }
 
     func show() {
         if window == nil {
-            let hosting = NSHostingController(rootView: SettingsView(model: model))
+            let hosting = NSHostingController(rootView: SettingsView(model: model, account: account))
             hosting.sceneBridgingOptions = [.toolbars, .title]
             hosting.sizingOptions = []
 
@@ -61,7 +63,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 
     var summary: String {
         switch self {
-        case .general: return "アプリの起動のしかたを設定します。"
+        case .general: return "使うテナントと、アプリの起動のしかたを設定します。"
         case .dictation: return "fn キーを押している間の音声を文字にして、入力中のアプリに貼り付けます。"
         case .vocabulary: return "文字起こしで決まって間違う語を登録します。貼り付ける前に置き換えます。"
         case .background: return "あなたの仕事や使う言葉を書いておくと、聞き間違いを文脈から直します。"
@@ -92,6 +94,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 
 private struct SettingsView: View {
     @ObservedObject var model: ChatModel
+    let account: Account
     @State private var pane: SettingsPane? = .general
 
     var body: some View {
@@ -113,7 +116,9 @@ private struct SettingsView: View {
                     PaneHeader(pane: pane)
                 }
                 switch pane {
-                case .general: GeneralPane()
+                case .general:
+                    TenantPane(account: account)
+                    GeneralPane()
                 case .dictation: DictationPane()
                 case .vocabulary: VocabularyPane()
                 case .background: BackgroundPane()
@@ -223,93 +228,5 @@ private struct DictationPane: View {
         let transcription = String(format: "文字起こし %.1f秒", timing.transcription)
         guard let cleanup = timing.cleanup else { return transcription }
         return transcription + String(format: " + 整形 %.1f秒", cleanup)
-    }
-}
-
-private struct VocabularyPane: View {
-    @ObservedObject private var vocabulary = Vocabulary.shared
-
-    var body: some View {
-        Section {
-            ForEach($vocabulary.entries) { $entry in
-                HStack {
-                    TextField("聞こえ方", text: $entry.heard, prompt: Text("聞こえ方 (例: タキオン)"))
-                    Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                    TextField("表記", text: $entry.written, prompt: Text("表記 (例: Tachyon)"))
-                    Button {
-                        vocabulary.entries.removeAll { $0.id == entry.id }
-                    } label: {
-                        Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.borderless)
-                    .help("削除")
-                }
-                .labelsHidden()
-            }
-            Button {
-                vocabulary.entries.append(Vocabulary.Entry(heard: "", written: ""))
-            } label: {
-                Label("語を追加", systemImage: "plus")
-            }
-        } footer: {
-            Text("どの整形モードでも有効です。")
-        }
-    }
-}
-
-private struct BackgroundPane: View {
-    @ObservedObject private var vocabulary = Vocabulary.shared
-
-    var body: some View {
-        Section {
-            TextEditor(text: $vocabulary.background)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 160)
-        } footer: {
-            Text("職種、扱っている製品、よく使う専門用語などを書きます。整形が「高精度」のときだけ使われます。")
-        }
-    }
-}
-
-private struct ModelsPane: View {
-    @ObservedObject var model: ChatModel
-
-    var body: some View {
-        if model.models.isEmpty {
-            Section {
-                Text("モデルを取得できませんでした。ログイン状態を確認してください。")
-                    .foregroundStyle(.secondary)
-            }
-        }
-
-        ForEach(model.providers, id: \.self) { provider in
-            let offered = model.models.filter { $0.provider == provider }
-            Section {
-                ForEach(offered) { info in
-                    Toggle(info.name, isOn: Binding(
-                        get: { model.isEnabled(info) },
-                        set: { model.setEnabled($0, for: [info]) }))
-                }
-            } header: {
-                HStack {
-                    Text(provider)
-                    Spacer()
-                    // One switch for the whole provider.
-                    let allOn = offered.allSatisfy(model.isEnabled)
-                    Button(allOn ? "すべてオフ" : "すべてオン") {
-                        model.setEnabled(!allOn, for: offered)
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                }
-            }
-        }
-
-        Section {
-            Button("既定に戻す (GPT-6 のみ)") {
-                model.resetEnabledModels()
-            }
-        }
     }
 }
