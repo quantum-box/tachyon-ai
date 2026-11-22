@@ -1,0 +1,15 @@
+{
+  "originHash" : "61c5f6e5b0bf1e145ccada78a69acf42a79ac9da727984a65e4517dc4667671f",
+  "pins" : [
+    {
+      "identity" : "litert-lm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/google-ai-edge/LiteRT-LM",
+      "state" : {
+        "revision" : "7a03724cece417f1724c923b3d527b4319730841",
+        "version" : "0.19.1"
+      }
+    }
+  ],
+  "version" : 3
+}
