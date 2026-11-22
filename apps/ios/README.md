@@ -23,6 +23,36 @@ xcodebuild -project TachyonAI.xcodeproj -scheme TachyonAI \
 
 実機で動かすときは、Xcode の Signing & Capabilities で開発チームを選ぶ。
 
+## TestFlight への自動配信
+
+`main` に iOS アプリか共通コードの変更が入ると、GitHub Actions (`.github/workflows/testflight.yml`) がビルドして TestFlight にアップロードする。`v*` タグと手動実行でも動く。ビルド番号には実行回数を使う。
+
+最初に一度だけ、次の設定が必要。
+
+1. App Store Connect で、バンドル ID `one.tachy.ai` のアプリを作る (Apple Developer で同じバンドル ID の登録も必要)。
+2. App Store Connect の「ユーザとアクセス > 統合 > App Store Connect API」で、App Manager 以上の権限の API キーを作り、`.p8` をダウンロードする。
+3. このリポジトリに次を設定する。
+
+| 種類 | 名前 | 値 |
+|---|---|---|
+| Variable | `APPLE_TEAM_ID` | Apple Developer のチーム ID |
+| Secret | `APP_STORE_CONNECT_KEY_ID` | API キーの Key ID |
+| Secret | `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID |
+| Secret | `APP_STORE_CONNECT_PRIVATE_KEY` | `.p8` ファイルの中身 |
+
+```bash
+gh variable set APPLE_TEAM_ID --body "<チーム ID>"
+gh secret set APP_STORE_CONNECT_KEY_ID --body "<Key ID>"
+gh secret set APP_STORE_CONNECT_ISSUER_ID --body "<Issuer ID>"
+gh secret set APP_STORE_CONNECT_PRIVATE_KEY < AuthKey_XXXXXXXXXX.p8
+```
+
+署名用の証明書は保存しない。アーカイブは署名なしで作り、書き出しのときに Xcode がクラウド上で管理する配布用証明書で署名する (API キーで認証)。
+
+アプリのアイコンは仮のもの。`swift scripts/make-icon.swift Sources/Assets.xcassets/AppIcon.appiconset/icon-1024.png` で作り直せる。
+
+バージョン (`MARKETING_VERSION`) はプロジェクトの設定で上げる。同じバージョンのまま何度アップロードしてもよいが、App Store に出したバージョンより上である必要がある。
+
 ## 構成
 
 - `Sources/`: iOS 専用の画面とマイク入力。

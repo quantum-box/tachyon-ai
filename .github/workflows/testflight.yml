@@ -1,0 +1,106 @@
+# Builds the iOS app and uploads it to TestFlight.
+# Runs on every push to main that touches the iOS app or the code it shares
+# with the Mac app, on v* tags, and by hand.
+#
+# Needs, once (see apps/ios/README.md):
+# - An app record for bundle ID `one.tachy.ai` in App Store Connect.
+# - Repository variable `APPLE_TEAM_ID`: the Apple Developer team ID.
+# - Repository secrets `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`
+#   and `APP_STORE_CONNECT_PRIVATE_KEY` (the contents of the .p8 file): an App
+#   Store Connect API key with the App Manager role or higher.
+#
+# No signing certificate is stored. The archive is built unsigned, and the
+# export step signs it with a distribution certificate that Xcode manages in
+# the cloud, authenticated by the API key.
+name: TestFlight
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+    paths:
+      - "apps/ios/**"
+      - "apps/macos/Sources/TachyonAI/Shared/**"
+      - ".github/workflows/testflight.yml"
+      - "!**.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: Build and upload
+    # Xcode 26 or later is needed for Liquid Glass.
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/ios
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      # TestFlight needs a new build number for every upload.
+      BUILD_NUMBER: ${{ github.run_number }}
+      ARCHIVE_PATH: ${{ runner.temp }}/TachyonAI.xcarchive
+      API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check configuration
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          missing=0
+          for name in APPLE_TEAM_ID APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_PRIVATE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not set (see apps/ios/README.md)"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project TachyonAI.xcodeproj \
+            -scheme TachyonAI \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE_PATH" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Sign and upload to TestFlight
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          umask 077
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$API_KEY_PATH"
+          /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_TEAM_ID" ExportOptions.plist
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$API_KEY_PATH" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+
+      - name: Remove API key
+        if: always()
+        run: rm -f "$API_KEY_PATH"
