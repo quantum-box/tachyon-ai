@@ -80,6 +80,7 @@ final class RealtimeTranscriber {
     private var config: Config?
     /// The gateway's ID for this session, for reporting how much audio it was sent.
     private var sessionID: String?
+    private var usageReported = false
     /// Every event as received, for the evaluation tool.
     var onRawEvent: ((String) -> Void)?
     private let session = URLSession(configuration: .ephemeral)
@@ -248,21 +249,28 @@ final class RealtimeTranscriber {
                 let trim = { (text: String) in text.trimmingCharacters(in: .whitespacesAndNewlines) }
                 metrics.matchedConfirmed = trim(finalText) == trim(returnedText)
             }
+            await reportUsageOnce()
             cancel()
-            await reportUsage()
             onSettled?(metrics)
         }
     }
 
     /// Tells the gateway how much audio the session was sent. The audio goes straight
     /// to OpenAI, so this report is the only way the gateway can meter the dictation.
-    private func reportUsage() async {
-        guard let config, let sessionID, sentBytes > 0 else { return }
+    ///
+    /// Every way a session ends comes through here (confirmed, failed, cancelled), and
+    /// only the first one reports. A session that was sent no audio reports nothing.
+    private func reportUsageOnce() async {
+        guard !usageReported, let config, let sessionID, sentBytes > 0 else { return }
+        usageReported = true
+        // The token from when the connection was opened may have expired since: a
+        // standby connection waits up to half an hour. The tenant stays the session's.
+        let token = (try? await loadConfig())?.bearerToken ?? config.bearerToken
         var request = URLRequest(url: config.apiURL.appendingPathComponent("v1/ai/realtime/transcription-usage"))
         request.httpMethod = "POST"
         request.timeoutInterval = 10
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(config.bearerToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue(config.operatorID, forHTTPHeaderField: "x-operator-id")
         // 24 kHz, 16-bit mono: 48,000 bytes per second, rounded up.
         var body: [String: Any] = ["session_id": sessionID, "audio_seconds": (sentBytes + 47_999) / 48_000]
@@ -282,6 +290,8 @@ final class RealtimeTranscriber {
     }
 
     func cancel() {
+        // A dictation that was cancelled or failed still used the audio it sent.
+        Task { await reportUsageOnce() }
         socket?.cancel(with: .normalClosure, reason: nil)
         socket = nil
         isOpen = false
