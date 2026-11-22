@@ -174,7 +174,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = one.tachy.ai;
+				PRODUCT_BUNDLE_IDENTIFIER = com.quantumbox.tachyonai;
 				PRODUCT_NAME = "Tachyon AI";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -200,7 +200,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = one.tachy.ai;
+				PRODUCT_BUNDLE_IDENTIFIER = com.quantumbox.tachyonai;
 				PRODUCT_NAME = "Tachyon AI";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";

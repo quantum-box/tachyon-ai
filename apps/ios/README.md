@@ -29,7 +29,7 @@ xcodebuild -project TachyonAI.xcodeproj -scheme TachyonAI \
 
 最初に一度だけ、次の設定が必要。
 
-1. App Store Connect で、バンドル ID `one.tachy.ai` のアプリを作る (Apple Developer で同じバンドル ID の登録も必要)。
+1. App Store Connect で、バンドル ID `com.quantumbox.tachyonai` のアプリを作る (Apple Developer で同じバンドル ID の登録も必要)。
 2. App Store Connect の「ユーザとアクセス > 統合 > App Store Connect API」で、App Manager 以上の権限の API キーを作り、`.p8` をダウンロードする。
 3. このリポジトリに次を設定する。
 

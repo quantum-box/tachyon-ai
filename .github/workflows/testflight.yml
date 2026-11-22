@@ -3,7 +3,7 @@
 # with the Mac app, on v* tags, and by hand.
 #
 # Needs, once (see apps/ios/README.md):
-# - An app record for bundle ID `one.tachy.ai` in App Store Connect.
+# - An app record for bundle ID `com.quantumbox.tachyonai` in App Store Connect.
 # - Repository variable `APPLE_TEAM_ID`: the Apple Developer team ID.
 # - Repository secrets `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`
 #   and `APP_STORE_CONNECT_PRIVATE_KEY` (the contents of the .p8 file): an App
