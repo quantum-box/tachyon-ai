@@ -56,7 +56,7 @@ struct VocabularyPane: View {
         Section {
             ForEach($vocabulary.entries) { $entry in
                 HStack {
-                    TextField("聞こえ方", text: $entry.heard, prompt: Text("聞こえ方 (例: タキオン)"))
+                    TextField("聞こえ方", text: $entry.heard, prompt: Text("聞こえ方 (省略可、例: タキオン)"))
                     Image(systemName: "arrow.right").foregroundStyle(.secondary)
                     TextField("表記", text: $entry.written, prompt: Text("表記 (例: Tachyon)"))
                     Button {
@@ -75,7 +75,7 @@ struct VocabularyPane: View {
                 Label("語を追加", systemImage: "plus")
             }
         } footer: {
-            Text("どの整形モードでも有効です。")
+            Text("「表記」は文字起こしのモデルに、出てくる語として伝えます。それでも「聞こえ方」のとおりに書かれたときは「表記」に置き換えます。どの整形モードでも有効です。")
         }
     }
 }
@@ -90,7 +90,7 @@ struct BackgroundPane: View {
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 160)
         } footer: {
-            Text("職種、扱っている製品、よく使う専門用語などを書きます。整形が「高精度」のときだけ使われます。")
+            Text("職種、扱っている製品、よく使う専門用語などを書きます。文字起こしと、整形が「高精度」のときの手がかりになります。")
         }
     }
 }

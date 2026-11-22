@@ -122,7 +122,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         let transcriber: RealtimeTranscriber
-        if let standby, standby.isUsable {
+        // A connection set up before the vocabulary was edited would not know the new words.
+        if let standby, standby.isUsable, standby.tuning == .dictation() {
             transcriber = standby
         } else {
             standby?.cancel()
@@ -155,7 +156,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func makeTranscriber() -> RealtimeTranscriber {
         let auth = self.auth
-        let transcriber = RealtimeTranscriber(loadConfig: { try await auth.config() })
+        let transcriber = RealtimeTranscriber(loadConfig: { try await auth.config() }, tuning: .dictation())
         transcriber.start()
         return transcriber
     }

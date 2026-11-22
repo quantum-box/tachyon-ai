@@ -35,6 +35,8 @@ final class DictationStats: ObservableObject {
             "confirmed_len=\(metrics.confirmedLength.map(String.init) ?? "-")",
             "match=\(metrics.matchedConfirmed.map(String.init) ?? "-")",
             "live=\(liveInsert)",
+            "model=\(metrics.model)",
+            "tuning=\(metrics.tuning)",
             "sent_audio_ms=\(metrics.sentAudioMilliseconds)",
             "mic=\(audio.input)",
             "buffers=\(audio.buffers)",
