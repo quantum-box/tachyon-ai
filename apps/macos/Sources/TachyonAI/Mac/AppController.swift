@@ -187,9 +187,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func endDictation() {
         guard let transcriber, let pressedAt else { return }
-        lastAudio = audio.stop()
-        // After the microphone has closed, so the cue is never part of the recording.
-        DictationSound.end.play()
+        // Once the microphone has closed, so the cue is never part of the recording.
+        lastAudio = audio.stop { DictationSound.end.play() }
         guard Date().timeIntervalSince(pressedAt) >= Self.minimumHold else {
             cancelDictation()
             return
