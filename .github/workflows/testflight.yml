@@ -1,15 +1,16 @@
-# Builds the iOS app and uploads it to TestFlight.
-# Runs on every push to main that touches the iOS app or the code it shares
-# with the Mac app, on v* tags, and by hand.
+# Builds the iOS and the Mac app and uploads both to TestFlight.
+# Runs on every push to main that touches the app, on v* tags, and by hand.
 #
-# Needs, once (see apps/ios/README.md):
-# - An app record for bundle ID `com.quantumbox.tachyonai` in App Store Connect.
+# Needs, once (see apps/tachyon/README.md):
+# - An app record for bundle ID `com.quantumbox.tachyonai` in App Store Connect,
+#   with both the iOS and the macOS platform added (one app, universal purchase).
 # - Repository variable `APPLE_TEAM_ID`: the Apple Developer team ID.
 # - Repository secrets `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`
 #   and `APP_STORE_CONNECT_PRIVATE_KEY` (the contents of the .p8 file): an App
 #   Store Connect API key with the App Manager role or higher.
 #
-# No signing certificate is stored. The archive is built unsigned, and the
+# No signing certificate is stored. The archive is built unsigned (the Mac one
+# signed ad hoc, so that it carries the App Sandbox entitlements), and the
 # export step signs it with a distribution certificate that Xcode manages in
 # the cloud, authenticated by the API key.
 name: TestFlight
@@ -22,8 +23,7 @@ on:
     tags:
       - "v*"
     paths:
-      - "apps/ios/**"
-      - "apps/macos/Sources/TachyonAI/Shared/**"
+      - "apps/tachyon/**"
       - ".github/workflows/testflight.yml"
       - "!**.md"
 
@@ -36,13 +36,25 @@ concurrency:
 
 jobs:
   upload:
-    name: Build and upload
+    name: Build and upload (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: iOS
+            scheme: TachyonAI
+            signing: CODE_SIGNING_ALLOWED=NO
+          - platform: macOS
+            scheme: TachyonAIMac
+            # Signed ad hoc so the archive keeps its entitlements (App Sandbox is
+            # required on the Mac App Store); the export re-signs it for distribution.
+            signing: CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO
     # Xcode 26 or later is needed for Liquid Glass.
     runs-on: macos-26
     timeout-minutes: 45
     defaults:
       run:
-        working-directory: apps/ios
+        working-directory: apps/tachyon
     env:
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       # TestFlight needs a new build number for every upload.
@@ -60,7 +72,7 @@ jobs:
           missing=0
           for name in APPLE_TEAM_ID APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_PRIVATE_KEY; do
             if [ -z "${!name}" ]; then
-              echo "::error::$name is not set (see apps/ios/README.md)"
+              echo "::error::$name is not set (see apps/tachyon/README.md)"
               missing=1
             fi
           done
@@ -73,13 +85,13 @@ jobs:
         run: |
           xcodebuild archive \
             -project TachyonAI.xcodeproj \
-            -scheme TachyonAI \
+            -scheme ${{ matrix.scheme }} \
             -configuration Release \
-            -destination 'generic/platform=iOS' \
+            -destination 'generic/platform=${{ matrix.platform }}' \
             -archivePath "$RUNNER_TEMP/TachyonAI.xcarchive" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            CODE_SIGNING_ALLOWED=NO
+            ${{ matrix.signing }}
 
       - name: Sign and upload to TestFlight
         env:
@@ -89,10 +101,10 @@ jobs:
         run: |
           umask 077
           printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$RUNNER_TEMP/AuthKey.p8"
-          /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_TEAM_ID" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_TEAM_ID" Config/ExportOptions.plist
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/TachyonAI.xcarchive" \
-            -exportOptionsPlist ExportOptions.plist \
+            -exportOptionsPlist Config/ExportOptions.plist \
             -exportPath "$RUNNER_TEMP/export" \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \

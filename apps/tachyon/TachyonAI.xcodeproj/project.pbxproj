@@ -8,15 +8,25 @@
 
 /* Begin PBXFileReference section */
 		7A0000000000000000000001 /* Tachyon AI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Tachyon AI.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A0000000000000000000101 /* Tachyon AI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Tachyon AI.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		7A0000000000000000000002 /* Sources */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Sources; sourceTree = "<group>"; };
-		7A0000000000000000000003 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; name = Shared; path = ../macos/Sources/TachyonAI/Shared; sourceTree = "<group>"; };
+		7A0000000000000000000002 /* iOS */ = {isa = PBXFileSystemSynchronizedRootGroup; path = iOS; sourceTree = "<group>"; };
+		7A0000000000000000000003 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shared; sourceTree = "<group>"; };
+		7A0000000000000000000102 /* Mac */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Mac; sourceTree = "<group>"; };
+		7A0000000000000000000103 /* Assets */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Assets; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		7A0000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A0000000000000000000104 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -29,8 +39,10 @@
 		7A0000000000000000000005 = {
 			isa = PBXGroup;
 			children = (
-				7A0000000000000000000002 /* Sources */,
+				7A0000000000000000000002 /* iOS */,
+				7A0000000000000000000102 /* Mac */,
 				7A0000000000000000000003 /* Shared */,
+				7A0000000000000000000103 /* Assets */,
 				7A0000000000000000000006 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -39,6 +51,7 @@
 			isa = PBXGroup;
 			children = (
 				7A0000000000000000000001 /* Tachyon AI.app */,
+				7A0000000000000000000101 /* Tachyon AI.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -59,12 +72,35 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				7A0000000000000000000002 /* Sources */,
+				7A0000000000000000000002 /* iOS */,
 				7A0000000000000000000003 /* Shared */,
+				7A0000000000000000000103 /* Assets */,
 			);
 			name = TachyonAI;
 			productName = TachyonAI;
 			productReference = 7A0000000000000000000001 /* Tachyon AI.app */;
+			productType = "com.apple.product-type.application";
+		};
+		7A0000000000000000000107 /* TachyonAIMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7A0000000000000000000110 /* Build configuration list for PBXNativeTarget "TachyonAIMac" */;
+			buildPhases = (
+				7A0000000000000000000109 /* Sources */,
+				7A0000000000000000000104 /* Frameworks */,
+				7A000000000000000000010A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7A0000000000000000000102 /* Mac */,
+				7A0000000000000000000003 /* Shared */,
+				7A0000000000000000000103 /* Assets */,
+			);
+			name = TachyonAIMac;
+			productName = TachyonAIMac;
+			productReference = 7A0000000000000000000101 /* Tachyon AI.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -93,6 +129,7 @@
 			projectRoot = "";
 			targets = (
 				7A0000000000000000000007 /* TachyonAI */,
+				7A0000000000000000000107 /* TachyonAIMac */,
 			);
 		};
 /* End PBXProject section */
@@ -105,10 +142,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A000000000000000000010A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		7A0000000000000000000009 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A0000000000000000000109 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -130,8 +181,8 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -148,7 +199,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				SDKROOT = iphoneos;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_VERSION = 5.0;
 				VALIDATE_PRODUCT = YES;
@@ -176,6 +227,7 @@
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quantumbox.tachyonai;
 				PRODUCT_NAME = "Tachyon AI";
+				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -202,8 +254,63 @@
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quantumbox.tachyonai;
 				PRODUCT_NAME = "Tachyon AI";
+				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		7A000000000000000000010D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "Config/TachyonAI-Mac.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Tachyon AI";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "fn キーを押している間の音声を文字起こしします。";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.quantumbox.tachyonai;
+				PRODUCT_NAME = "Tachyon AI";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		7A000000000000000000010E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "Config/TachyonAI-Mac.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Tachyon AI";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "fn キーを押している間の音声を文字起こしします。";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.quantumbox.tachyonai;
+				PRODUCT_NAME = "Tachyon AI";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 			};
 			name = Release;
 		};
@@ -224,6 +331,15 @@
 			buildConfigurations = (
 				7A000000000000000000000D /* Debug */,
 				7A000000000000000000000E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7A0000000000000000000110 /* Build configuration list for PBXNativeTarget "TachyonAIMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7A000000000000000000010D /* Debug */,
+				7A000000000000000000010E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

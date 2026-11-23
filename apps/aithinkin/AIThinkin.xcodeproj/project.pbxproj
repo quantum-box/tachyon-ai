@@ -50,7 +50,7 @@
 				7B0000000000000000000012 /* Zoom.swift */,
 			);
 			name = Shared;
-			path = ../macos/Sources/TachyonAI/Shared;
+			path = ../tachyon/Shared;
 			sourceTree = "<group>";
 		};
 		7B0000000000000000000006 /* Products */ = {

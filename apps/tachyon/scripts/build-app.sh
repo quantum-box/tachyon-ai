@@ -11,7 +11,7 @@ APP="build/Tachyon AI.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/TachyonAI"
-cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp Config/Dev-Info.plist "$APP/Contents/Info.plist"
 
 # Sign with the certificate from create-dev-cert.sh when it exists, so macOS
 # keeps the granted permissions across rebuilds. Ad-hoc signatures ("-")
