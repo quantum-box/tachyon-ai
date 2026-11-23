@@ -23,9 +23,8 @@ enum TermLearning {
             }
             // Capitalized words one space apart are one name: "Tachyon Field".
             if previousEnd >= 0, range.location == previousEnd + 1, source.character(at: previousEnd) == space,
-               var last = groups.popLast(), last.count < maximumWords {
-                last.append(range)
-                groups.append(last)
+               let last = groups.indices.last, groups[last].count < maximumWords {
+                groups[last].append(range)
             } else {
                 groups.append([range])
             }

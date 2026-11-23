@@ -82,6 +82,12 @@ final class CorrectionWatcher {
             return
         }
         let current = String(value.dropFirst(watch.prefix.count).dropLast(watch.suffix.count))
+        // An emptied field is a sent message when nothing else was in it: the same end
+        // of the watch, and not a deletion to take as the latest state.
+        guard !current.isEmpty else {
+            finish()
+            return
+        }
         if current != watch.current {
             watch.current = current
             watch.changedAt = now
