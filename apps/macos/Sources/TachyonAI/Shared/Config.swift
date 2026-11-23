@@ -20,6 +20,9 @@ struct Settings {
     /// tachyon-cli-client: a public OAuth client (PKCE, no secret).
     var cognitoClientID = "4101nun74fvfusnlsanc00urke"
     var language = "ja"
+    /// Model the dictation session is switched to once connected; it must take
+    /// keywords for the vocabulary to reach it. Empty keeps the gateway's own.
+    var transcriptionModel = "gpt-live-transcribe"
     /// Model for the agent chat (the web app's default).
     var chatModel = "anthropic/claude-sonnet-5"
     /// Small, fast model for tidying dictated text.
@@ -35,6 +38,7 @@ struct Settings {
         var cognitoDomain: String?
         var cognitoClientId: String?
         var language: String?
+        var transcriptionModel: String?
         var chatModel: String?
         var cleanupModel: String?
         var operatorId: String?
@@ -58,6 +62,7 @@ struct Settings {
         if let url = file.cognitoDomain.flatMap(URL.init(string:)) { settings.cognitoDomain = url }
         if let id = file.cognitoClientId, !id.isEmpty { settings.cognitoClientID = id }
         if let language = file.language, !language.isEmpty { settings.language = language }
+        if let model = file.transcriptionModel { settings.transcriptionModel = model }
         if let model = file.chatModel, !model.isEmpty { settings.chatModel = model }
         if let model = file.cleanupModel, !model.isEmpty { settings.cleanupModel = model }
         if let id = file.operatorId, !id.isEmpty { settings.operatorID = id }

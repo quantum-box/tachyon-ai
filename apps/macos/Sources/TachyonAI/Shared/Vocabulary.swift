@@ -14,12 +14,14 @@ final class Vocabulary: ObservableObject {
         var written: String
     }
 
-    /// Replacements applied to every transcript before it is pasted.
+    /// Words given to the transcription model as ones to expect, and replacements
+    /// applied to every transcript before it is pasted.
     @Published var entries: [Entry] {
         didSet { save() }
     }
 
-    /// Background (role, product names, jargon) given to the LLM cleanup as context.
+    /// Background (role, product names, jargon) given to the transcription model and
+    /// the LLM cleanup as context.
     @Published var background: String {
         didSet { UserDefaults.standard.set(background, forKey: Self.backgroundKey) }
     }
@@ -46,6 +48,15 @@ final class Vocabulary: ObservableObject {
             let written = entry.written.trimmingCharacters(in: .whitespaces)
             return heard.isEmpty || written.isEmpty ? nil : (heard, written)
         }
+    }
+
+    /// Spellings the transcription model is told to expect, so it writes them itself.
+    /// An entry needs no "heard" side for this.
+    var keywords: [String] {
+        var seen = Set<String>()
+        return entries
+            .map { $0.written.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
     /// Rewrites every registered word. Longer words go first, so "タキオンフィールド"

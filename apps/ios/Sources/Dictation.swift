@@ -67,7 +67,7 @@ final class Dictation: ObservableObject {
                 return
             }
             let auth = self.auth
-            let transcriber = RealtimeTranscriber(loadConfig: { try await auth.config() })
+            let transcriber = RealtimeTranscriber(loadConfig: { try await auth.config() }, tuning: .dictation())
             transcriber.beginTurn()
             transcriber.onPartial = { [weak self] text in self?.partial = text }
             transcriber.start()
