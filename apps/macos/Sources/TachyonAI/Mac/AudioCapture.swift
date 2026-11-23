@@ -86,10 +86,22 @@ final class AudioCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate
         controlQueue.async { session.startRunning() }
     }
 
+    /// Stops recording. The microphone closes a moment after this returns: `whenClosed`
+    /// is called on the main thread once nothing more is being captured.
     @discardableResult
-    func stop() -> Summary {
+    func stop(whenClosed: (() -> Void)? = nil) -> Summary {
         if let session {
-            controlQueue.async { session.stopRunning() }
+            let captureQueue = self.captureQueue
+            controlQueue.async {
+                session.stopRunning()
+                // Buffers captured before the stop may still be on their way to the delegate.
+                captureQueue.sync {}
+                if let whenClosed {
+                    DispatchQueue.main.async(execute: whenClosed)
+                }
+            }
+        } else {
+            whenClosed?()
         }
         session = nil
         return lock.withLock { summary }
