@@ -160,6 +160,31 @@ enum TermLearning {
         return found.count <= maximumCorrections ? found : []
     }
 
+    /// Replaces `heard` where it is a word of its own: not where the letters before or
+    /// after it continue it into a longer word ("Aws" is not replaced inside "draws",
+    /// nor "テスト" inside "テストケース").
+    static func replacingWord(_ heard: String, with written: String, in text: String) -> String {
+        guard let first = heard.first, let last = heard.last else { return text }
+        let pattern = (wordCharacters(Script(of: first)).map { "(?<!\($0))" } ?? "")
+            + NSRegularExpression.escapedPattern(for: heard)
+            + (wordCharacters(Script(of: last)).map { "(?!\($0))" } ?? "")
+        guard let expression = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+            return text
+        }
+        return expression.stringByReplacingMatches(
+            in: text, range: NSRange(location: 0, length: (text as NSString).length),
+            withTemplate: NSRegularExpression.escapedTemplate(for: written))
+    }
+
+    /// The characters that continue a word written in `script`, as a regular expression.
+    private static func wordCharacters(_ script: Script) -> String? {
+        switch script {
+        case .latin: return "[0-9A-Za-z\\u00C0-\\u024F]"
+        case .katakana: return "[\\u30A1-\\u30FC]"
+        default: return nil
+        }
+    }
+
     private static let maximumCompared = 2000
     private static let maximumHeard = 30
     private static let maximumCorrections = 3

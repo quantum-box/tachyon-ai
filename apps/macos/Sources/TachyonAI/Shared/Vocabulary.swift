@@ -93,18 +93,28 @@ final class Vocabulary: ObservableObject {
         UserDefaults.standard.set(items, forKey: Self.learnedKey)
     }
 
+    struct Replacement {
+        var heard: String
+        var written: String
+        /// Replace `heard` only where it stands as a word of its own. A learned fix was
+        /// made to a whole word and says nothing about the same letters inside another:
+        /// "Aws" to "AWS" must leave "draws" alone. The user's own entries match anywhere,
+        /// as they always have.
+        var wholeWord = false
+    }
+
     /// Entries that can actually be applied (both sides filled in).
-    var replacements: [(heard: String, written: String)] {
-        let manual = entries.compactMap { entry -> (heard: String, written: String)? in
+    var replacements: [Replacement] {
+        let manual = entries.compactMap { entry -> Replacement? in
             let heard = entry.heard.trimmingCharacters(in: .whitespaces)
             let written = entry.written.trimmingCharacters(in: .whitespaces)
-            return heard.isEmpty || written.isEmpty ? nil : (heard, written)
+            return heard.isEmpty || written.isEmpty ? nil : Replacement(heard: heard, written: written)
         }
         // The user's own entry for a word wins over a learned one.
         let taken = Set(manual.map { $0.heard.lowercased() })
         let automatic = learned
             .filter { $0.replaces && !taken.contains($0.heard.lowercased()) }
-            .map { (heard: $0.heard, written: $0.written) }
+            .map { Replacement(heard: $0.heard, written: $0.written, wholeWord: true) }
         return manual + automatic
     }
 
@@ -128,10 +138,12 @@ final class Vocabulary: ObservableObject {
         Self.apply(replacements, to: text)
     }
 
-    nonisolated static func apply(_ replacements: [(heard: String, written: String)], to text: String) -> String {
+    nonisolated static func apply(_ replacements: [Replacement], to text: String) -> String {
         var result = text
-        for (heard, written) in replacements.sorted(by: { $0.heard.count > $1.heard.count }) {
-            result = result.replacingOccurrences(of: heard, with: written, options: .caseInsensitive)
+        for item in replacements.sorted(by: { $0.heard.count > $1.heard.count }) {
+            result = item.wholeWord
+                ? TermLearning.replacingWord(item.heard, with: item.written, in: result)
+                : result.replacingOccurrences(of: item.heard, with: item.written, options: .caseInsensitive)
         }
         return result
     }
