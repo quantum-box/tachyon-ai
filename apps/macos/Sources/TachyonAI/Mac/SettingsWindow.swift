@@ -204,6 +204,7 @@ private struct DictationPane: View {
     @ObservedObject private var stats = DictationStats.shared
     @AppStorage(Preferences.cleanupModeKey) private var cleanupMode = CleanupMode.fast
     @AppStorage(Preferences.liveInsertKey) private var liveInsert = false
+    @AppStorage(Preferences.dictationSoundsKey) private var sounds = true
 
     var body: some View {
         Section {
@@ -221,6 +222,12 @@ private struct DictationPane: View {
                 .disabled(cleanupMode == .thorough)
         } footer: {
             Text("試験的な機能です。オンにすると、文字起こしが届くそばから入力欄に打ち込みます。オフでは、fn を離したあとにまとめて貼り付けます。整形が「高精度」のときは使えません。")
+        }
+
+        Section {
+            Toggle("録音の開始と終了で音を鳴らす", isOn: $sounds)
+        } footer: {
+            Text("fn を押して録音が始まったときと、離したときに短い音を鳴らします。")
         }
 
         if let last = stats.last {

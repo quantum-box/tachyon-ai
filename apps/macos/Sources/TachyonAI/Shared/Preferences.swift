@@ -70,6 +70,14 @@ enum Preferences {
 
     static let liveInsertKey = "liveInsert"
 
+    /// Play a short sound when recording starts and when the key is released. On unless turned off.
+    static var dictationSounds: Bool {
+        get { UserDefaults.standard.object(forKey: dictationSoundsKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: dictationSoundsKey) }
+    }
+
+    static let dictationSoundsKey = "dictationSounds"
+
     /// Tokens and cost of every reply received in this app, until reset.
     static var totalUsage: TokenUsage {
         get {

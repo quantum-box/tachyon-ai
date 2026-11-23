@@ -63,6 +63,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fnKey.onRelease = { [weak self] in self?.endDictation() }
         fnKey.onCancel = { [weak self] in self?.cancelDictation() }
         fnKey.start()
+        DictationSound.prepare()
 
         requestPermissions()
         account.onChange = { [weak self] in
@@ -120,6 +121,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             show(error)
             return
         }
+        DictationSound.start.play()
 
         let transcriber: RealtimeTranscriber
         // A connection set up before the vocabulary was edited would not know the new words.
@@ -182,6 +184,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func endDictation() {
         guard let transcriber, let pressedAt else { return }
         lastAudio = audio.stop()
+        // After the microphone has closed, so the cue is never part of the recording.
+        DictationSound.end.play()
         guard Date().timeIntervalSince(pressedAt) >= Self.minimumHold else {
             cancelDictation()
             return
