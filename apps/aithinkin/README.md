@@ -9,7 +9,7 @@
 | Apple Intelligence (Foundation Models) | Apple Intelligence に対応したデバイス。追加のダウンロードなし |
 | Gemma 4 (E2B) | 初回に 2.6 GB のモデルをダウンロード。Apple Intelligence 非対応のデバイスでも動く |
 
-一般のユーザー向けのアプリ。法人向けの Tachyon AI (`../ios`, `../macos`) とは別の製品で、ログインもネットワークも使わない。会話はデバイスの外に出ない。
+一般のユーザー向けのアプリ。法人向けの Tachyon AI (`../tachyon`) とは別の製品で、ログインもネットワークも使わない。会話はデバイスの外に出ない。
 
 ## できること
 
@@ -52,7 +52,7 @@ xcodebuild -project AIThinkin.xcodeproj -scheme AIThinkin \
 - `Sources/ChatStore.swift`: 会話の状態、保存、モデルとのやり取り。
 - `Sources/GemmaDownload.swift`: Gemma 4 のモデルファイルのダウンロードと削除。
 - `Sources/ChatScreen.swift`, `Sources/SettingsScreen.swift`: 画面。
-- `../macos/Sources/TachyonAI/Shared/MarkdownView.swift`, `Zoom.swift`: Mac 版・iOS 版と共通の Markdown 表示。プロジェクトはこの 2 ファイルだけを参照している。
+- `../tachyon/Shared/MarkdownView.swift`, `Zoom.swift`: Mac 版・iOS 版と共通の Markdown 表示。プロジェクトはこの 2 ファイルだけを参照している。
 
 端末内モデルが一度に扱える文章量は小さい。長い会話を再開するときは、直近のやり取りだけをモデルに渡す。
 

@@ -1,6 +1,16 @@
 # Tachyon AI
 
-Tachyon の macOS アプリ。メニューバーに常駐する。
+Tachyon の Mac アプリと iPhone / iPad アプリ。どちらも `TachyonAI.xcodeproj` から作り、App Store Connect では同じアプリ (`com.quantumbox.tachyonai`) として配る。macOS 26 / iOS 26 以降が必要 (Liquid Glass を使うため)。
+
+- `Mac/`: Mac 専用 (メニューバー、fn キーの音声入力、チャット窓)
+- `iOS/`: iOS 専用の画面とマイク入力
+- `Shared/`: 共通のコード (ログイン、API、チャットの状態、Markdown 表示、整形、設定の各項目)。`apps/aithinkin` も Markdown 表示の 2 ファイルを参照している
+- `Assets/`: アプリのアイコン (両方)
+- `Config/`: Mac 版のエンタイトルメント、開発ビルドの Info.plist、TestFlight の書き出し設定
+
+フォルダはプロジェクトにそのまま同期されていて、ファイルを足せば自動でビルド対象になる。
+
+Mac 版はメニューバーに常駐する。
 
 ## チャット
 
@@ -43,9 +53,21 @@ fn (🌐) キーを押している間だけ録音し、離すと文字起こし�
 
 音声は OpenAI に直接送るので、送った秒数は音声入力が終わるたびに gateway へ報告する (`/v1/ai/realtime/transcription-usage`)。gateway はこの秒数で課金する。
 
-## 使い方
+## iOS 版
 
-macOS 26 以降が必要 (Liquid Glass を使うため)。
+- Tachyon のエージェントとチャットする。返答はストリーミングで、Markdown として表示される。
+- 過去の会話を一覧から開いて、続きから再開する。
+- モデルと思考量を選ぶ。
+- 写真やファイルを添付する (画像とテキスト形式。合計 約3MB まで)。
+- 設定の「使用量」で、今の会話とアプリ累計のトークン数と料金を見る。
+- 入力欄のマイクボタンで音声入力する (もう一度押すと終了し、文字が入力欄に入る)。
+- 設定で、文字起こしの整形、用語辞書、背景情報、表示するモデルを変える。
+
+Mac 版にある「fn キーを押している間の音声入力 (他のアプリへの貼り付け)」は、iOS にはない。iOS ではアプリが他のアプリに文字を入力できないため。
+
+## Mac 版を手元で動かす
+
+TestFlight で入れるのがいちばん早い。手元でビルドするときは、Swift Package (`Package.swift`) で開発用のアプリを作る。こちらはサンドボックスなし、バンドル ID `one.tachy.ai` で、TestFlight 版とは別のアプリとして並んで入る。
 
 1. `./scripts/build-app.sh` でビルドする
 2. `open "build/Tachyon AI.app"` で起動する
@@ -55,7 +77,16 @@ macOS 26 以降が必要 (Liquid Glass を使うため)。
 
 ## 開発
 
-ソースは `Sources/TachyonAI/Mac` (Mac 専用) と `Sources/TachyonAI/Shared` (iOS 版と共通) に分かれている。iOS 版は `apps/ios`。
+`TachyonAI.xcodeproj` を Xcode で開くと、スキーム `TachyonAI` (iOS) と `TachyonAIMac` (Mac) がある。コマンドラインでは次のとおり。
+
+```bash
+xcodebuild -project TachyonAI.xcodeproj -scheme TachyonAI \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath build build
+xcodebuild -project TachyonAI.xcodeproj -scheme TachyonAIMac \
+  -destination 'generic/platform=macOS' -derivedDataPath build build
+```
+
+実機や署名つきで動かすときは、Xcode の Signing & Capabilities で開発チームを選ぶ。Xcode で作る Mac 版は App Sandbox が有効 (TestFlight 版と同じ)。
 
 文字起こしの設定を比べるときは、同じ音声ファイルを音声入力と同じ経路に流す。
 
@@ -69,9 +100,39 @@ afconvert -f WAVE -d LEI16@24000 -c 1 speech.m4a speech.wav
 
 `./scripts/dev.sh` を端末で動かしておくと、`./scripts/build-app.sh` で新しいビルドができるたびにアプリが自動で再起動し、開いていた会話も復元される。
 
+## TestFlight への自動配信
+
+`main` に `apps/tachyon` の変更が入ると、GitHub Actions (`.github/workflows/testflight.yml`) が iOS 版と Mac 版をビルドして TestFlight にアップロードする。`v*` タグと手動実行でも動く。ビルド番号には実行回数を使う。
+
+最初に一度だけ、次の設定が必要。
+
+1. App Store Connect で、バンドル ID `com.quantumbox.tachyonai` のアプリを作り、プラットフォームに iOS と macOS の両方を追加する (Apple Developer で同じバンドル ID の登録も必要)。
+2. App Store Connect の「ユーザとアクセス > 統合 > App Store Connect API」で、App Manager 以上の権限の API キーを作り、`.p8` をダウンロードする。
+3. このリポジトリに次を設定する。
+
+| 種類 | 名前 | 値 |
+|---|---|---|
+| Variable | `APPLE_TEAM_ID` | Apple Developer のチーム ID |
+| Secret | `APP_STORE_CONNECT_KEY_ID` | API キーの Key ID |
+| Secret | `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID |
+| Secret | `APP_STORE_CONNECT_PRIVATE_KEY` | `.p8` ファイルの中身 |
+
+```bash
+gh variable set APPLE_TEAM_ID --body "<チーム ID>"
+gh secret set APP_STORE_CONNECT_KEY_ID --body "<Key ID>"
+gh secret set APP_STORE_CONNECT_ISSUER_ID --body "<Issuer ID>"
+gh secret set APP_STORE_CONNECT_PRIVATE_KEY < AuthKey_XXXXXXXXXX.p8
+```
+
+署名用の証明書は保存しない。アーカイブは署名なし (Mac 版はエンタイトルメントを残すため ad-hoc 署名) で作り、書き出しのときに Xcode がクラウド上で管理する配布用証明書で署名する (API キーで認証)。
+
+アプリのアイコンは仮のもの。`./scripts/make-icons.sh` で作り直せる (Mac 用の各サイズも作る)。
+
+バージョン (`MARKETING_VERSION`) はプロジェクトの設定で上げる。同じバージョンのまま何度アップロードしてもよいが、App Store に出したバージョンより上である必要がある。
+
 ## 設定 (任意)
 
-`~/Library/Application Support/TachyonAI/config.json`
+`~/Library/Application Support/TachyonAI/config.json`。TestFlight 版 (サンドボックス) では `~/Library/Containers/com.quantumbox.tachyonai/Data/Library/Application Support/TachyonAI/config.json`。
 
 | キー | 既定値 | 用途 |
 |---|---|---|
