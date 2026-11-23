@@ -326,13 +326,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func requestPermissions() {
         AVCaptureDevice.requestAccess(for: .audio) { _ in }
-        // Needed to see the fn key in other apps and to send the paste keystroke.
-        let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        if !AXIsProcessTrustedWithOptions(prompt) {
-            show(PermissionError.accessibility)
-        } else if !CGPreflightPostEventAccess() {
-            // Asks again for the paste keystroke alone.
+        // Needed to send the paste keystroke. Asked for this way because the
+        // Accessibility prompt (AXIsProcessTrustedWithOptions) never appears for a
+        // sandboxed app, and the app is then missing from the Accessibility list too.
+        // This request shows the system prompt and adds the app to that list.
+        if !CGPreflightPostEventAccess() {
             CGRequestPostEventAccess()
+            show(PermissionError.accessibility)
         }
     }
 
