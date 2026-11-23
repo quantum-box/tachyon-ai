@@ -89,6 +89,7 @@ final class Dictation: ObservableObject {
                 do {
                     let text = await self.tidied(try await transcriber.finish())
                     if !text.isEmpty {
+                        DictationHistory.shared.add(text)
                         Vocabulary.shared.noteDictated(text)
                         deliver(text)
                     } else if summary.wasSilent {

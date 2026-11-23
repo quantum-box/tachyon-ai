@@ -24,6 +24,9 @@ struct SettingsScreen: View {
                     Text("高速: 「えーと」「あのー」などをアプリ内で即座に取り除きます。\n高精度: LLM が言い直しや句読点も直します。少し遅くなり、利用料がかかります。")
                 }
 
+                NavigationLink("音声入力の履歴") {
+                    Form { HistoryPane() }.navigationTitle("履歴")
+                }
                 NavigationLink("用語辞書") {
                     Form { VocabularyPane() }.navigationTitle("用語辞書")
                 }

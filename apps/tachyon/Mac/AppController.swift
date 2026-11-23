@@ -233,6 +233,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         // clipboard and say why, instead of silently pasting nothing.
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(text, forType: .string)
+                        DictationHistory.shared.add(text)
                         self.show(PermissionError.accessibilityForPaste)
                         return
                     }
@@ -282,6 +283,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// From here on, the user fixing a word in `text` teaches the vocabulary that word.
     private func pasted(_ text: String) {
+        DictationHistory.shared.add(text)
         Vocabulary.shared.noteDictated(text)
         corrections.begin(pasted: text)
     }
@@ -362,6 +364,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .target = self
         menu.addItem(withTitle: "設定…", action: #selector(openSettingsWindow), keyEquivalent: "")
             .target = self
+        menu.addItem(withTitle: "音声入力の履歴…", action: #selector(openHistory), keyEquivalent: "")
+            .target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "fn を押している間、音声入力", action: nil, keyEquivalent: "")
         let loginItem = menu.addItem(withTitle: "", action: #selector(toggleLogin), keyEquivalent: "")
@@ -414,6 +418,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSettingsWindow() {
         settingsWindow.show()
+    }
+
+    @objc private func openHistory() {
+        settingsWindow.showHistory()
     }
 
     /// Never shown (the app has no menu bar of its own), but it is what makes

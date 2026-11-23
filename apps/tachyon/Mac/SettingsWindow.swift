@@ -8,15 +8,23 @@ final class SettingsWindowController {
     private let model: ChatModel
     private let account: Account
     private var window: NSWindow?
+    private let selection = SettingsSelection()
 
     init(model: ChatModel, account: Account) {
         self.model = model
         self.account = account
     }
 
+    /// Opens straight to the dictation history.
+    func showHistory() {
+        selection.pane = .history
+        show()
+    }
+
     func show() {
         if window == nil {
-            let hosting = NSHostingController(rootView: SettingsView(model: model, account: account))
+            let hosting = NSHostingController(
+                rootView: SettingsView(model: model, account: account, selection: selection))
             hosting.sceneBridgingOptions = [.toolbars, .title]
             hosting.sizingOptions = []
 
@@ -41,10 +49,17 @@ final class SettingsWindowController {
     }
 }
 
+/// Which section is showing, so the menu bar can open the window on one.
+@MainActor
+private final class SettingsSelection: ObservableObject {
+    @Published var pane: SettingsPane? = .general
+}
+
 /// The sections of the settings window, listed in the sidebar like System Settings.
 private enum SettingsPane: String, CaseIterable, Identifiable {
     case general
     case dictation
+    case history
     case vocabulary
     case background
     case models
@@ -56,6 +71,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "一般"
         case .dictation: return "音声入力"
+        case .history: return "履歴"
         case .vocabulary: return "用語辞書"
         case .background: return "背景情報"
         case .models: return "モデル"
@@ -67,6 +83,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "使うテナントと、アプリの起動のしかたを設定します。"
         case .dictation: return "fn キーを押している間の音声を文字にして、入力中のアプリに貼り付けます。"
+        case .history: return "音声入力した文字の履歴です。このデバイスにだけ保存されます。"
         case .vocabulary: return "文字起こしで決まって間違う語を登録します。貼り付ける前に置き換えます。"
         case .background: return "あなたの仕事や使う言葉を書いておくと、聞き間違いを文脈から直します。"
         case .models: return "チャットのモデルメニューに表示するモデルを選びます。"
@@ -78,6 +95,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "gearshape.fill"
         case .dictation: return "mic.fill"
+        case .history: return "clock.arrow.circlepath"
         case .vocabulary: return "character.book.closed.fill"
         case .background: return "person.text.rectangle.fill"
         case .models: return "sparkles"
@@ -89,6 +107,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: return .gray
         case .dictation: return .red
+        case .history: return .teal
         case .vocabulary: return .orange
         case .background: return .blue
         case .models: return .purple
@@ -100,11 +119,11 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 private struct SettingsView: View {
     @ObservedObject var model: ChatModel
     let account: Account
-    @State private var pane: SettingsPane? = .general
+    @ObservedObject var selection: SettingsSelection
 
     var body: some View {
         NavigationSplitView {
-            List(SettingsPane.allCases, selection: $pane) { pane in
+            List(SettingsPane.allCases, selection: $selection.pane) { pane in
                 Label {
                     Text(pane.title)
                 } icon: {
@@ -115,7 +134,7 @@ private struct SettingsView: View {
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
         } detail: {
-            let pane = pane ?? .general
+            let pane = selection.pane ?? .general
             Form {
                 Section {
                     PaneHeader(pane: pane)
@@ -125,6 +144,7 @@ private struct SettingsView: View {
                     TenantPane(account: account)
                     GeneralPane()
                 case .dictation: DictationPane()
+                case .history: HistoryPane()
                 case .vocabulary: VocabularyPane()
                 case .background: BackgroundPane()
                 case .models: ModelsPane(model: model)
