@@ -51,6 +51,15 @@ struct UsagePane: View {
 
 struct VocabularyPane: View {
     @ObservedObject private var vocabulary = Vocabulary.shared
+    @AppStorage(Preferences.autoLearnTermsKey) private var autoLearn = true
+
+    #if os(macOS)
+    private static let learningNote = "チャットで自分が打った文章と背景情報から、英字の製品名や固有名詞を拾います。"
+        + "音声入力で貼り付けた語を書き直したときは、その語も覚えます (貼り付け先の入力欄の文字を読みます。"
+        + "保存するのは書き直した語だけです)。同じ書き直しが2回あると、以降は自動で置き換えます。"
+    #else
+    private static let learningNote = "チャットで自分が打った文章と背景情報から、英字の製品名や固有名詞を拾います。"
+    #endif
 
     var body: some View {
         Section {
@@ -76,6 +85,31 @@ struct VocabularyPane: View {
             }
         } footer: {
             Text("「表記」は文字起こしのモデルに、出てくる語として伝えます。それでも「聞こえ方」のとおりに書かれたときは「表記」に置き換えます。どの整形モードでも有効です。")
+        }
+
+        Section {
+            Toggle("用語を自動で登録する", isOn: $autoLearn)
+            ForEach(vocabulary.learned) { item in
+                HStack {
+                    if item.replaces {
+                        Text(item.heard).foregroundStyle(.secondary)
+                        Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                    }
+                    Text(item.written)
+                    Spacer()
+                    Button {
+                        vocabulary.forget(item)
+                    } label: {
+                        Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("削除 (今後は登録しません)")
+                }
+            }
+        } header: {
+            Text("自動で登録した語")
+        } footer: {
+            Text(Self.learningNote + "\n削除した語は、今後登録しません。オフにしても、登録済みの語は残ります。")
         }
     }
 }

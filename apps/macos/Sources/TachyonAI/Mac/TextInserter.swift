@@ -84,6 +84,9 @@ final class LiveInserter {
 
     var hasTypedAnything: Bool { !sent.isEmpty }
 
+    /// The whole text typed into the app.
+    var text: String { sent }
+
     /// Extends the typed text to `target`. Returns false when `target` does not start
     /// with what was already typed (nothing is done in that case).
     @discardableResult

@@ -78,6 +78,14 @@ enum Preferences {
 
     static let dictationSoundsKey = "dictationSounds"
 
+    /// Add names to the vocabulary without being asked. On unless turned off.
+    static var autoLearnTerms: Bool {
+        get { UserDefaults.standard.object(forKey: autoLearnTermsKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: autoLearnTermsKey) }
+    }
+
+    static let autoLearnTermsKey = "autoLearnTerms"
+
     /// Tokens and cost of every reply received in this app, until reset.
     static var totalUsage: TokenUsage {
         get {

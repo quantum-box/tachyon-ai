@@ -16,6 +16,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private let model = OverlayModel()
     private let fnKey = FnKeyMonitor()
+    private let corrections = CorrectionWatcher()
     private let audio = AudioCapture()
     private let auth = AuthService()
     private lazy var api = TachyonAPI(auth: auth)
@@ -114,6 +115,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func beginDictation() {
         guard transcriber == nil else { return }
         errorDismissal?.cancel()
+        // Whatever was fixed in the last dictation has been fixed by now.
+        corrections.finish()
 
         do {
             try audio.start()
@@ -167,7 +170,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// which replaces a connection that was dropped or has grown old.
     private func prepareStandby() {
         guard auth.isLoggedIn || Settings.load().apiKey != nil else { return }
-        if let standby, standby.isUsable { return }
+        // A connection that does not know a word learned since is replaced ahead of the next press.
+        if let standby, standby.isUsable, standby.tuning == .dictation() { return }
         standby?.cancel()
         standby = makeTranscriber()
     }
@@ -210,6 +214,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                             live.appendRemainder(of: Self.tidied(raw))
                         }
                         live.finish()
+                        self.pasted(live.text)
                         DictationStats.shared.last = DictationStats.Timing(
                             transcription: transcribed.timeIntervalSince(released), cleanup: nil)
                         self.finishDictation(transcriber)
@@ -222,6 +227,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.finishDictation(transcriber)
                     if !text.isEmpty {
                         TextInserter.insert(text)
+                        self.pasted(text)
                     }
                     // Nothing to paste because nothing was heard: say so instead of failing quietly.
                     if self.lastAudio.wasSilent {
@@ -261,6 +267,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return (Self.fallback(raw), true)
             }
         }
+    }
+
+    /// From here on, the user fixing a word in `text` teaches the vocabulary that word.
+    private func pasted(_ text: String) {
+        Vocabulary.shared.noteDictated(text)
+        corrections.begin(pasted: text)
     }
 
     /// What the thorough mode pastes when the LLM cannot be used.

@@ -168,6 +168,8 @@ final class ChatModel: ObservableObject {
         }
         guard !task.isEmpty, !isRunning, !isLoadingHistory else { return }
         if text == nil {
+            // What the user wrote themselves spells their product and proper names right.
+            Vocabulary.shared.learn(fromTyped: task)
             draft = ""
             attachments = []
             attachmentError = nil
