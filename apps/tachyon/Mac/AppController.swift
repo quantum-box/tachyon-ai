@@ -137,7 +137,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         standby = nil
         transcriber.beginTurn()
         // The LLM cleanup rewrites the whole text, so it can only be pasted at the end.
-        let live = Preferences.liveInsert && Preferences.cleanupMode != .thorough ? LiveInserter() : nil
+        // Without Accessibility the keystrokes are dropped, so live typing would lose the text.
+        let live = Preferences.liveInsert && Preferences.cleanupMode != .thorough && AXIsProcessTrusted()
+            ? LiveInserter() : nil
         self.live = live
         transcriber.onPartial = { [weak self] text in
             guard let self else { return }
@@ -224,6 +226,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         transcription: transcribed.timeIntervalSince(released),
                         cleanup: usedLLM ? Date().timeIntervalSince(transcribed) : nil)
                     self.finishDictation(transcriber)
+                    if !text.isEmpty, !AXIsProcessTrusted() {
+                        // macOS drops the ⌘V without Accessibility. Keep the text on the
+                        // clipboard and say why, instead of silently pasting nothing.
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(text, forType: .string)
+                        self.show(PermissionError.accessibilityForPaste)
+                        return
+                    }
                     if !text.isEmpty {
                         TextInserter.insert(text)
                         self.pasted(text)
@@ -326,7 +336,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private enum PermissionError: LocalizedError {
         case accessibility
-        var errorDescription: String? { "アクセシビリティを許可して、アプリを再起動してください" }
+        case accessibilityForPaste
+        var errorDescription: String? {
+            switch self {
+            case .accessibility: return "アクセシビリティを許可して、アプリを再起動してください"
+            case .accessibilityForPaste:
+                return "アクセシビリティが許可されていないため貼り付けられません (文字はクリップボードにあります)"
+            }
+        }
     }
 
     // MARK: - Menu bar
