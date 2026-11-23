@@ -105,7 +105,9 @@ enum TermLearning {
     /// Only a rewritten name is of interest: the transcription's side must be katakana or
     /// Latin letters, which is how it spells a word it does not know. Changes among kanji
     /// and hiragana are choices between homophones or edits to the sentence, and say
-    /// nothing that holds for the next dictation.
+    /// nothing that holds for the next dictation. Neither does a changed number.
+    /// A fix to the capitals alone counts ("Github" to "GitHub"): they are part of how a
+    /// name is spelled.
     static func corrections(from pasted: String, to edited: String) -> [Correction] {
         let old = Array(pasted), new = Array(edited)
         guard old != new, old.count <= maximumCompared, new.count <= maximumCompared else { return [] }
@@ -128,7 +130,12 @@ enum TermLearning {
             while (i < old.count && removed[i]) || (j < new.count && inserted[j]) {
                 if i < old.count, removed[i] { i += 1 } else { j += 1 }
             }
-            if i > startOld, j > startNew {
+            // Letters only added or only taken out count when it happened inside a word
+            // ("Noton" to "Notion"). At the edge of one it is the user writing more, or less.
+            let rewritten = i > startOld && j > startNew
+            let lettersAdded = i == startOld && isInsideWord(startOld, old, changed: new[startNew..<j])
+            let lettersDropped = j == startNew && isInsideWord(startNew, new, changed: old[startOld..<i])
+            if rewritten || lettersAdded || lettersDropped {
                 hunks.append(widened(startOld..<i, startNew..<j, old, new))
             }
             if i == startOld, j == startNew { i += 1; j += 1 }
@@ -140,7 +147,7 @@ enum TermLearning {
             let written = String(new[hunk.new]).trimmingCharacters(in: .whitespaces)
             guard heard.count >= 2, written.count >= 2,
                   heard.count <= maximumHeard, written.count <= maximumHeard,
-                  heard.caseInsensitiveCompare(written) != .orderedSame,
+                  heard != written, heard.contains(where: \.isLetter),
                   heard.allSatisfy({ [.latin, .katakana, .joiner].contains(Script(of: $0)) }),
                   written.allSatisfy({ Script(of: $0) != .other }),
                   written.contains(where: { [.latin, .katakana].contains(Script(of: $0)) }),
@@ -174,6 +181,16 @@ enum TermLearning {
             upperNew += 1
         }
         return (lowerOld..<upperOld, lowerNew..<upperNew)
+    }
+
+    /// `changed` was added or taken out at `position` of `text`, between two letters of
+    /// one word, and is made of the same kind of letters.
+    private static func isInsideWord(
+        _ position: Int, _ text: [Character], changed: ArraySlice<Character>
+    ) -> Bool {
+        guard !changed.isEmpty, position > 0, position < text.count,
+              continues(text[position - 1], text[position]) else { return false }
+        return changed.allSatisfy { Script(of: $0) == Script(of: text[position]) }
     }
 
     /// `neighbor` belongs to the same word as `edge`, the character next to it.
