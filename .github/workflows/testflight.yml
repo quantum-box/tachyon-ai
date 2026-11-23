@@ -99,8 +99,9 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
-          umask 077
-          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$RUNNER_TEMP/AuthKey.p8"
+          # Only the key file is private. A umask for the whole step would also make
+          # the exported Mac installer root-only, which App Store Connect rejects.
+          (umask 077; printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$RUNNER_TEMP/AuthKey.p8")
           /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_TEAM_ID" Config/ExportOptions.plist
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/TachyonAI.xcarchive" \
