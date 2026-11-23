@@ -183,19 +183,22 @@ enum TermLearning {
     }
 
     /// `changed` was added or taken out at `position` of `text`, between two letters of
-    /// one word, and is made of the same kind of letters.
+    /// one word, and is made of the same kind of letters, or is the space that splits a
+    /// name in two ("Git Hub" for "GitHub").
     private static func isInsideWord(
         _ position: Int, _ text: [Character], changed: ArraySlice<Character>
     ) -> Bool {
         guard !changed.isEmpty, position > 0, position < text.count,
               continues(text[position - 1], text[position]) else { return false }
-        return changed.allSatisfy { Script(of: $0) == Script(of: text[position]) }
+        return changed.allSatisfy { [Script(of: text[position]), .joiner].contains(Script(of: $0)) }
     }
 
-    /// `neighbor` belongs to the same word as `edge`, the character next to it.
+    /// `neighbor` belongs to the same name as `edge`, the character next to it. A space
+    /// at the edge is one inside a name: when the fix joins "Git hub" into "GitHub", the
+    /// word before the space is part of what was fixed.
     private static func continues(_ neighbor: Character, _ edge: Character) -> Bool {
-        let script = Script(of: neighbor)
-        return (script == .latin || script == .katakana) && script == Script(of: edge)
+        let script = Script(of: neighbor), edgeScript = Script(of: edge)
+        return (script == .latin || script == .katakana) && (script == edgeScript || edgeScript == .joiner)
     }
 
     private enum Script {
