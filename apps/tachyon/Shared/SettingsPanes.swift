@@ -170,3 +170,94 @@ struct ModelsPane: View {
         }
     }
 }
+
+/// What was dictated, newest first, grouped by day.
+struct HistoryPane: View {
+    @ObservedObject private var history = DictationHistory.shared
+    @AppStorage(DictationHistory.retentionKey) private var retention = HistoryRetention.forever
+    @State private var confirmingClear = false
+    @State private var copied: DictationHistory.Entry.ID?
+
+    var body: some View {
+        Section {
+            Picker("履歴を保持", selection: Binding(
+                get: { retention },
+                set: { history.retention = $0 })) {
+                ForEach(HistoryRetention.allCases, id: \.self) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+        } footer: {
+            Text("音声入力した文字を、このデバイスにだけ保存します。貼り付けに失敗しても、ここからコピーできます。音声は保存しません。")
+        }
+
+        if history.entries.isEmpty {
+            Section {
+                Text(retention == .never ? "履歴は保存されません。" : "まだ履歴がありません。")
+                    .foregroundStyle(.secondary)
+            }
+        }
+
+        ForEach(days, id: \.day) { group in
+            Section(group.day.formatted(date: .long, time: .omitted)) {
+                ForEach(group.entries) { entry in
+                    row(entry)
+                }
+            }
+        }
+
+        if !history.entries.isEmpty {
+            Section {
+                Button("履歴をすべて削除", role: .destructive) { confirmingClear = true }
+                    .confirmationDialog("履歴をすべて削除しますか？", isPresented: $confirmingClear) {
+                        Button("すべて削除", role: .destructive) { history.clear() }
+                    } message: {
+                        Text("この操作は取り消せません。")
+                    }
+            }
+        }
+    }
+
+    private func row(_ entry: DictationHistory.Entry) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(entry.date.formatted(date: .omitted, time: .shortened))
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+            Text(entry.text)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                Self.copy(entry.text)
+                copied = entry.id
+            } label: {
+                Image(systemName: copied == entry.id ? "checkmark" : "doc.on.doc")
+            }
+            .buttonStyle(.borderless)
+            .help("コピー")
+            .accessibilityLabel("コピー")
+            Button {
+                history.remove(entry)
+            } label: {
+                Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("削除")
+            .accessibilityLabel("削除")
+        }
+    }
+
+    private var days: [(day: Date, entries: [DictationHistory.Entry])] {
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: history.entries) { calendar.startOfDay(for: $0.date) }
+        return grouped.keys.sorted(by: >).map { ($0, grouped[$0] ?? []) }
+    }
+
+    private static func copy(_ text: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #else
+        UIPasteboard.general.string = text
+        #endif
+    }
+}

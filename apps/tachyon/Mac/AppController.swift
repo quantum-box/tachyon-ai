@@ -137,8 +137,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         standby = nil
         transcriber.beginTurn()
         // The LLM cleanup rewrites the whole text, so it can only be pasted at the end.
-        // Without Accessibility the keystrokes are dropped, so live typing would lose the text.
-        let live = Preferences.liveInsert && Preferences.cleanupMode != .thorough && AXIsProcessTrusted()
+        // Without permission to post events the keystrokes are dropped, so live typing
+        // would lose the text. This is its own permission: Accessibility can be granted
+        // while this one is still refused (a grant left over from a differently signed build).
+        let live = Preferences.liveInsert && Preferences.cleanupMode != .thorough && CGPreflightPostEventAccess()
             ? LiveInserter() : nil
         self.live = live
         transcriber.onPartial = { [weak self] text in
@@ -226,11 +228,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         transcription: transcribed.timeIntervalSince(released),
                         cleanup: usedLLM ? Date().timeIntervalSince(transcribed) : nil)
                     self.finishDictation(transcriber)
-                    if !text.isEmpty, !AXIsProcessTrusted() {
+                    if !text.isEmpty, !CGPreflightPostEventAccess() {
                         // macOS drops the ⌘V without Accessibility. Keep the text on the
                         // clipboard and say why, instead of silently pasting nothing.
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(text, forType: .string)
+                        DictationHistory.shared.add(text)
                         self.show(PermissionError.accessibilityForPaste)
                         return
                     }
@@ -280,6 +283,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// From here on, the user fixing a word in `text` teaches the vocabulary that word.
     private func pasted(_ text: String) {
+        DictationHistory.shared.add(text)
         Vocabulary.shared.noteDictated(text)
         corrections.begin(pasted: text)
     }
@@ -326,6 +330,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         if !AXIsProcessTrustedWithOptions(prompt) {
             show(PermissionError.accessibility)
+        } else if !CGPreflightPostEventAccess() {
+            // Asks again for the paste keystroke alone.
+            CGRequestPostEventAccess()
         }
     }
 
@@ -356,6 +363,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "チャットを開く", action: #selector(openChat), keyEquivalent: "")
             .target = self
         menu.addItem(withTitle: "設定…", action: #selector(openSettingsWindow), keyEquivalent: "")
+            .target = self
+        menu.addItem(withTitle: "音声入力の履歴…", action: #selector(openHistory), keyEquivalent: "")
             .target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "fn を押している間、音声入力", action: nil, keyEquivalent: "")
@@ -409,6 +418,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSettingsWindow() {
         settingsWindow.show()
+    }
+
+    @objc private func openHistory() {
+        settingsWindow.showHistory()
     }
 
     /// Never shown (the app has no menu bar of its own), but it is what makes
