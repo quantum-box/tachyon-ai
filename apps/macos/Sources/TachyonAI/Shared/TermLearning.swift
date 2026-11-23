@@ -203,8 +203,8 @@ enum TermLearning {
     /// The text between two changes is the same before and after, so a fix grows by the
     /// same characters on both sides, and only through ones that continue the word on
     /// both. It cannot grow past the next change, where the two texts stop lining up:
-    /// a fix that reaches one takes it in (a word fixed in two places, "Googel" to
-    /// "Google", is one fix) and goes on from there.
+    /// a fix that reaches one takes in what belongs to the word (a word fixed in two
+    /// places, "Googel" to "Google", is one fix) and goes on from there.
     private static func widen(_ hunks: inout [Hunk], _ old: [Character], _ new: [Character]) {
         var index = 0
         while index < hunks.count {
@@ -226,21 +226,66 @@ enum TermLearning {
             }
             hunks[index] = hunk
 
+            // From a change that is not a fix itself (text typed after the word), only
+            // the letters that continue the word are taken: "GitHubs" out of "s tomorrow".
             if index > 0, hunk.old.lowerBound == floor {
-                let previous = hunks.remove(at: index - 1)
-                index -= 1
-                hunks[index] = Hunk(
-                    old: previous.old.lowerBound..<hunk.old.upperBound,
-                    new: previous.new.lowerBound..<hunk.new.upperBound, isFix: true)
-            } else if index + 1 < hunks.count, hunk.old.upperBound == ceiling {
-                let next = hunks.remove(at: index + 1)
-                hunks[index] = Hunk(
-                    old: hunk.old.lowerBound..<next.old.upperBound,
-                    new: hunk.new.lowerBound..<next.new.upperBound, isFix: true)
-            } else {
-                index += 1
+                var previous = hunks[index - 1]
+                let takenOld = previous.isFix ? previous.old.count : trailingWord(previous.old, old)
+                let takenNew = previous.isFix ? previous.new.count : trailingWord(previous.new, new)
+                hunk.old = hunk.old.lowerBound - takenOld..<hunk.old.upperBound
+                hunk.new = hunk.new.lowerBound - takenNew..<hunk.new.upperBound
+                previous.old = previous.old.lowerBound..<previous.old.upperBound - takenOld
+                previous.new = previous.new.lowerBound..<previous.new.upperBound - takenNew
+                hunks[index] = hunk
+                if previous.old.isEmpty, previous.new.isEmpty {
+                    hunks.remove(at: index - 1)
+                    index -= 1
+                    continue
+                }
+                hunks[index - 1] = previous
             }
+            if index + 1 < hunks.count, hunk.old.upperBound == ceiling {
+                var next = hunks[index + 1]
+                let takenOld = next.isFix ? next.old.count : leadingWord(next.old, old)
+                let takenNew = next.isFix ? next.new.count : leadingWord(next.new, new)
+                hunk.old = hunk.old.lowerBound..<hunk.old.upperBound + takenOld
+                hunk.new = hunk.new.lowerBound..<hunk.new.upperBound + takenNew
+                next.old = next.old.lowerBound + takenOld..<next.old.upperBound
+                next.new = next.new.lowerBound + takenNew..<next.new.upperBound
+                hunks[index] = hunk
+                if next.old.isEmpty, next.new.isEmpty {
+                    hunks.remove(at: index + 1)
+                    continue
+                }
+                hunks[index + 1] = next
+            }
+            index += 1
         }
+    }
+
+    /// How many characters at the start of `range` continue the word that ends just before it.
+    private static func leadingWord(_ range: Range<Int>, _ text: [Character]) -> Int {
+        var count = 0
+        while range.lowerBound + count < range.upperBound, range.lowerBound + count > 0,
+              isSameWord(text[range.lowerBound + count], text[range.lowerBound + count - 1]) {
+            count += 1
+        }
+        return count
+    }
+
+    /// How many characters at the end of `range` continue the word that starts just after it.
+    private static func trailingWord(_ range: Range<Int>, _ text: [Character]) -> Int {
+        var count = 0
+        while range.upperBound - count > range.lowerBound, range.upperBound - count < text.count,
+              isSameWord(text[range.upperBound - count - 1], text[range.upperBound - count]) {
+            count += 1
+        }
+        return count
+    }
+
+    private static func isSameWord(_ one: Character, _ other: Character) -> Bool {
+        let script = Script(of: one)
+        return (script == .latin || script == .katakana) && script == Script(of: other)
     }
 
     /// `changed` was added or taken out at `position` of `text`, between two letters of
