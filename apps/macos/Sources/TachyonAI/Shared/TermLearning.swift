@@ -122,26 +122,30 @@ enum TermLearning {
         // Mostly different: the user rewrote the text instead of fixing words in it.
         guard removed.filter({ $0 }).count <= max(maximumHeard, old.count / 2) else { return [] }
 
-        var hunks: [(old: Range<Int>, new: Range<Int>)] = []
+        var hunks: [Hunk] = []
         var i = 0, j = 0
         while i < old.count || j < new.count {
             let startOld = i, startNew = j
             while (i < old.count && removed[i]) || (j < new.count && inserted[j]) {
                 if i < old.count, removed[i] { i += 1 } else { j += 1 }
             }
-            // Letters only added or only taken out count when it happened inside a word
-            // ("Noton" to "Notion"). At the edge of one it is the user writing more, or less.
-            let rewritten = i > startOld && j > startNew
-            let lettersAdded = i == startOld && isInsideWord(startOld, old, changed: new[startNew..<j])
-            let lettersDropped = j == startNew && isInsideWord(startNew, new, changed: old[startOld..<i])
-            if rewritten || lettersAdded || lettersDropped {
-                hunks.append(widened(startOld..<i, startNew..<j, old, new))
+            if i > startOld || j > startNew {
+                // Letters only added or only taken out count when it happened inside a word
+                // ("Noton" to "Notion"). At the edge of one it is the user writing more, or less.
+                let rewritten = i > startOld && j > startNew
+                let lettersAdded = i == startOld && isInsideWord(startOld, old, changed: new[startNew..<j])
+                let lettersDropped = j == startNew && isInsideWord(startNew, new, changed: old[startOld..<i])
+                hunks.append(Hunk(
+                    old: startOld..<i, new: startNew..<j, isFix: rewritten || lettersAdded || lettersDropped))
+            } else {
+                i += 1
+                j += 1
             }
-            if i == startOld, j == startNew { i += 1; j += 1 }
         }
+        widen(&hunks, old, new)
 
         var seen = Set<String>()
-        let found = hunks.compactMap { hunk -> Correction? in
+        let found = hunks.filter(\.isFix).compactMap { hunk -> Correction? in
             let heard = String(old[hunk.old]).trimmingCharacters(in: .whitespaces)
             let written = String(new[hunk.new]).trimmingCharacters(in: .whitespaces)
             guard heard.count >= 2, written.count >= 2,
@@ -160,26 +164,58 @@ enum TermLearning {
     private static let maximumHeard = 30
     private static let maximumCorrections = 3
 
-    /// Grows a changed stretch to the whole word around it: fixing one letter of
-    /// "タキヨン" is a correction of the word, not of the letter. The text on either
-    /// side is the same before and after, so both stretches grow together, and only
-    /// through characters that continue the word on both sides.
-    private static func widened(
-        _ oldRange: Range<Int>, _ newRange: Range<Int>, _ old: [Character], _ new: [Character]
-    ) -> (old: Range<Int>, new: Range<Int>) {
-        var lowerOld = oldRange.lowerBound, lowerNew = newRange.lowerBound
-        var upperOld = oldRange.upperBound, upperNew = newRange.upperBound
-        while lowerOld > 0, lowerNew > 0,
-              continues(old[lowerOld - 1], old[lowerOld]), continues(new[lowerNew - 1], new[lowerNew]) {
-            lowerOld -= 1
-            lowerNew -= 1
+    /// A stretch of the text that changed: `old` became `new`.
+    private struct Hunk {
+        var old: Range<Int>
+        var new: Range<Int>
+        /// A change to a word, as opposed to text added to or cut from the sentence.
+        var isFix: Bool
+    }
+
+    /// Grows each fix to the whole word around it: fixing one letter of "タキヨン" is a
+    /// correction of the word, not of the letter.
+    ///
+    /// The text between two changes is the same before and after, so a fix grows by the
+    /// same characters on both sides, and only through ones that continue the word on
+    /// both. It cannot grow past the next change, where the two texts stop lining up:
+    /// a fix that reaches one takes it in (a word fixed in two places, "Googel" to
+    /// "Google", is one fix) and goes on from there.
+    private static func widen(_ hunks: inout [Hunk], _ old: [Character], _ new: [Character]) {
+        var index = 0
+        while index < hunks.count {
+            guard hunks[index].isFix else { index += 1; continue }
+            var hunk = hunks[index]
+            let floor = index > 0 ? hunks[index - 1].old.upperBound : 0
+            while hunk.old.lowerBound > floor, hunk.old.lowerBound < old.count, hunk.new.lowerBound < new.count,
+                  continues(old[hunk.old.lowerBound - 1], old[hunk.old.lowerBound]),
+                  continues(new[hunk.new.lowerBound - 1], new[hunk.new.lowerBound]) {
+                hunk.old = hunk.old.lowerBound - 1..<hunk.old.upperBound
+                hunk.new = hunk.new.lowerBound - 1..<hunk.new.upperBound
+            }
+            let ceiling = index + 1 < hunks.count ? hunks[index + 1].old.lowerBound : old.count
+            while hunk.old.upperBound < ceiling, hunk.old.upperBound > 0, hunk.new.upperBound > 0,
+                  continues(old[hunk.old.upperBound], old[hunk.old.upperBound - 1]),
+                  continues(new[hunk.new.upperBound], new[hunk.new.upperBound - 1]) {
+                hunk.old = hunk.old.lowerBound..<hunk.old.upperBound + 1
+                hunk.new = hunk.new.lowerBound..<hunk.new.upperBound + 1
+            }
+            hunks[index] = hunk
+
+            if index > 0, hunk.old.lowerBound == floor {
+                let previous = hunks.remove(at: index - 1)
+                index -= 1
+                hunks[index] = Hunk(
+                    old: previous.old.lowerBound..<hunk.old.upperBound,
+                    new: previous.new.lowerBound..<hunk.new.upperBound, isFix: true)
+            } else if index + 1 < hunks.count, hunk.old.upperBound == ceiling {
+                let next = hunks.remove(at: index + 1)
+                hunks[index] = Hunk(
+                    old: hunk.old.lowerBound..<next.old.upperBound,
+                    new: hunk.new.lowerBound..<next.new.upperBound, isFix: true)
+            } else {
+                index += 1
+            }
         }
-        while upperOld < old.count, upperNew < new.count,
-              continues(old[upperOld], old[upperOld - 1]), continues(new[upperNew], new[upperNew - 1]) {
-            upperOld += 1
-            upperNew += 1
-        }
-        return (lowerOld..<upperOld, lowerNew..<upperNew)
     }
 
     /// `changed` was added or taken out at `position` of `text`, between two letters of
