@@ -137,8 +137,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         standby = nil
         transcriber.beginTurn()
         // The LLM cleanup rewrites the whole text, so it can only be pasted at the end.
-        // Without Accessibility the keystrokes are dropped, so live typing would lose the text.
-        let live = Preferences.liveInsert && Preferences.cleanupMode != .thorough && AXIsProcessTrusted()
+        // Without permission to post events the keystrokes are dropped, so live typing
+        // would lose the text. This is its own permission: Accessibility can be granted
+        // while this one is still refused (a grant left over from a differently signed build).
+        let live = Preferences.liveInsert && Preferences.cleanupMode != .thorough && CGPreflightPostEventAccess()
             ? LiveInserter() : nil
         self.live = live
         transcriber.onPartial = { [weak self] text in
@@ -226,7 +228,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         transcription: transcribed.timeIntervalSince(released),
                         cleanup: usedLLM ? Date().timeIntervalSince(transcribed) : nil)
                     self.finishDictation(transcriber)
-                    if !text.isEmpty, !AXIsProcessTrusted() {
+                    if !text.isEmpty, !CGPreflightPostEventAccess() {
                         // macOS drops the ⌘V without Accessibility. Keep the text on the
                         // clipboard and say why, instead of silently pasting nothing.
                         NSPasteboard.general.clearContents()
@@ -326,6 +328,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         if !AXIsProcessTrustedWithOptions(prompt) {
             show(PermissionError.accessibility)
+        } else if !CGPreflightPostEventAccess() {
+            // Asks again for the paste keystroke alone.
+            CGRequestPostEventAccess()
         }
     }
 
