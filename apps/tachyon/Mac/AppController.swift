@@ -333,6 +333,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !CGPreflightPostEventAccess() {
             CGRequestPostEventAccess()
             show(PermissionError.accessibility)
+            // The system prompt appears only the first time; after that the request is
+            // silent. So go to System Settings on every launch without the permission.
+            openAccessibilitySettings()
         }
     }
 
