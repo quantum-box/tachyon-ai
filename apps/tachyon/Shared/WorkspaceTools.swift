@@ -259,7 +259,9 @@ enum WorkspaceTools {
                 if skipped.contains(url.lastPathComponent) { enumerator?.skipDescendants() }
                 continue
             }
-            guard (values?.fileSize ?? 0) <= maxSearchedFileBytes,
+            // A file can be a symbolic link to somewhere outside the folder.
+            guard (try? resolve(url.path, in: root)) != nil,
+                  (values?.fileSize ?? 0) <= maxSearchedFileBytes,
                   let data = try? Data(contentsOf: url), !data.contains(0),
                   let text = String(data: data, encoding: .utf8) else { continue }
             for (index, line) in text.components(separatedBy: "\n").enumerated()

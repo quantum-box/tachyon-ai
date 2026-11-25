@@ -349,7 +349,9 @@ final class ChatModel: ObservableObject {
             let answer: (text: String, isError: Bool)
             if let project, let root = project.resolveFolder() {
                 answer = await WorkspaceTools.run(name, args: args, root: root) { [weak self] request in
-                    if project.allowsWritesWithoutAsking { return true }
+                    // The current setting: "always allow" chosen earlier in this turn counts.
+                    let current = self?.project(project.id) ?? project
+                    if current.allowsWritesWithoutAsking { return true }
                     return await self?.onConfirmWrite?(project, request) ?? false
                 }
             } else {
