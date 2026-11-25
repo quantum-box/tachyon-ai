@@ -460,11 +460,33 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         viewMenu.addItem(withTitle: "実際のサイズ", action: #selector(resetZoom), keyEquivalent: "0").target = self
         addSubmenu(viewMenu, to: mainMenu)
 
+        // Browser keys for the chat window's side pane; ⌘W closes a tab before the window.
+        let fileMenu = NSMenu(title: "ファイル")
+        fileMenu.addItem(withTitle: "新しいタブ", action: #selector(newTab), keyEquivalent: "t").target = self
+        fileMenu.addItem(withTitle: "場所を開く…", action: #selector(openLocation), keyEquivalent: "l").target = self
+        fileMenu.addItem(withTitle: "タブを閉じる", action: #selector(closeTab), keyEquivalent: "w").target = self
+        addSubmenu(fileMenu, to: mainMenu)
+
         let windowMenu = NSMenu(title: "ウインドウ")
-        windowMenu.addItem(withTitle: "閉じる", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(withTitle: "閉じる", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "W")
         addSubmenu(windowMenu, to: mainMenu)
 
         NSApp.mainMenu = mainMenu
+    }
+
+    @objc private func newTab() {
+        chatWindow.newTab()
+    }
+
+    @objc private func openLocation() {
+        chatWindow.focusAddressBar()
+    }
+
+    /// The chat window closes a tab of its pane; other windows (settings) just close.
+    @objc private func closeTab() {
+        if !chatWindow.closeTab() {
+            NSApp.keyWindow?.performClose(nil)
+        }
     }
 
     private func addSubmenu(_ submenu: NSMenu, to menu: NSMenu) {

@@ -8,6 +8,8 @@ final class ChatWindowController {
     private let account: Account
     private let openSettings: () -> Void
     private var window: NSWindow?
+    /// The side pane; kept here so the menu's tab commands reach it.
+    private let pane = BrowserPaneModel()
 
     init(model: ChatModel, account: Account, openSettings: @escaping () -> Void) {
         self.model = model
@@ -21,7 +23,7 @@ final class ChatWindowController {
             // title drive the window's own toolbar, which is drawn in Liquid Glass.
             let hosting = NSHostingController(
                 rootView: ChatView(
-                    model: model, account: account, openSettings: openSettings,
+                    model: model, account: account, pane: pane, openSettings: openSettings,
                     widenWindow: { [weak self] in self?.widen(toAtLeast: $0) }))
             hosting.sceneBridgingOptions = [.toolbars, .title]
             // Otherwise the window grows to the split view's ideal size (the whole screen).
@@ -56,6 +58,26 @@ final class ChatWindowController {
         }
     }
 
+    /// ⌘T: a new tab in the pane, opening the chat window if needed.
+    func newTab() {
+        show()
+        pane.newTab()
+    }
+
+    /// ⌘L: the address field of the open web tab, or of a new tab.
+    func focusAddressBar() {
+        show()
+        pane.focusAddressBar()
+    }
+
+    /// ⌘W while the chat window is in front: closes the pane's tab.
+    /// False when there is no tab to close, so the window itself closes.
+    func closeTab() -> Bool {
+        guard let window, window.isKeyWindow, pane.isShown, let id = pane.selectedTabID else { return false }
+        pane.close(id)
+        return true
+    }
+
     /// Makes room for the browser pane, without leaving the screen.
     private func widen(toAtLeast width: CGFloat) {
         guard let window, window.frame.width < width,
@@ -86,10 +108,10 @@ extension NSWindow {
 private struct ChatView: View {
     @ObservedObject var model: ChatModel
     @ObservedObject var account: Account
+    @ObservedObject var pane: BrowserPaneModel
     let openSettings: () -> Void
     let widenWindow: (CGFloat) -> Void
     @FocusState private var inputFocused: Bool
-    @StateObject private var pane = BrowserPaneModel()
     @State private var columns = NavigationSplitViewVisibility.all
     /// The agent's request to read the open page, waiting for the user's answer.
     @State private var shareRequest: ShareRequest?

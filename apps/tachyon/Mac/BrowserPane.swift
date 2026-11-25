@@ -76,6 +76,8 @@ final class BrowserPaneModel: ObservableObject {
     }
     @Published private(set) var tabs: [BrowserTab] = []
     @Published var selectedTabID: BrowserTab.ID?
+    /// Bumped to move keyboard focus to the open web tab's address field (⌘L).
+    @Published private(set) var addressFocusRequest = 0
 
     /// The conversation the tabs belong to; nil for a new chat not sent yet.
     private var sessionID: String?
@@ -114,6 +116,16 @@ final class BrowserPaneModel: ObservableObject {
     /// An empty tab, for typing an address.
     func newTab() {
         insert(makeTab(nil))
+    }
+
+    /// ⌘L: the address field of the open web tab, or a new tab when none is open.
+    func focusAddressBar() {
+        guard selectedTab?.page != nil else {
+            newTab()
+            return
+        }
+        isShown = true
+        addressFocusRequest += 1
     }
 
     /// Shows text from the chat in full. Such tabs last until the app quits.
@@ -253,8 +265,7 @@ struct BrowserPane: View {
                 Image(systemName: "plus")
             }
             .buttonStyle(.borderless)
-            .keyboardShortcut("t", modifiers: .command)
-            .help("新しいタブ")
+            .help("新しいタブ (⌘T)")
 
             Menu {
                 Button("Tachyon を開く") { pane.openTachyon() }
@@ -405,6 +416,9 @@ private struct BrowserTabView: View {
         .onAppear {
             address = page.url?.absoluteString ?? ""
             if page.url == nil { addressFocused = true }
+        }
+        .onChange(of: pane.addressFocusRequest) {
+            addressFocused = true
         }
         .onChange(of: page.url) {
             if !addressFocused { address = page.url?.absoluteString ?? "" }
