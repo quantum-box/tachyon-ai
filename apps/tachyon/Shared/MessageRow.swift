@@ -16,8 +16,11 @@ struct MessageRow: View {
             HStack {
                 Spacer(minLength: 56)
                 VStack(alignment: .trailing, spacing: 6) {
-                    ForEach(message.attachments, id: \.self) { name in
-                        let file = message.files.first { $0.filename == name }
+                    // By position, not name: two files may share a name. `attachments` is
+                    // `files.map(\.filename)` for messages sent in this run.
+                    ForEach(message.attachments.indices, id: \.self) { index in
+                        let name = message.attachments[index]
+                        let file = message.files.indices.contains(index) ? message.files[index] : nil
                         let chip = Label(name, systemImage: file?.isImage == true ? "photo" : "paperclip")
                             .font(.caption)
                             .lineLimit(1)
