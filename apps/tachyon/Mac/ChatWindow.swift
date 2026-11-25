@@ -87,7 +87,11 @@ final class ChatWindowController {
         if frame.maxX > visible.maxX {
             frame.origin.x = max(visible.minX, visible.maxX - frame.width)
         }
-        window.setFrame(frame, display: true, animate: true)
+        // After the SwiftUI update that asked for it, and without animation: resizing
+        // inside the update, while replies stream in, looped AppKit's layout.
+        DispatchQueue.main.async {
+            window.setFrame(frame, display: true, animate: false)
+        }
     }
 }
 
@@ -153,8 +157,11 @@ private struct ChatView: View {
                 conversation
                 if pane.isShown {
                     PaneDivider(width: $paneWidth)
+                    // Flexible below the saved width: a pane that insisted on its width made
+                    // AppKit grow the window mid-layout, which crashed in a layout loop.
                     BrowserPane(pane: pane)
-                        .frame(width: paneWidth)
+                        .frame(minWidth: 240, idealWidth: paneWidth, maxWidth: paneWidth)
+                        .layoutPriority(1)
                         .transition(.move(edge: .trailing))
                 }
             }
