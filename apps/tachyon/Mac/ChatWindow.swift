@@ -398,6 +398,20 @@ private struct ChatView: View {
         return name
     }
 
+    /// Downloads a file Field stored and shows it in the side pane.
+    private func openSharedFile(_ file: SharedFile) {
+        Task {
+            do {
+                switch try await model.load(file) {
+                case .file(let attachment): pane.open(attachment)
+                case .link(let url): pane.open(url)
+                }
+            } catch {
+                model.attachmentError = "「\(file.name)」を開けませんでした: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -419,6 +433,7 @@ private struct ChatView: View {
                                 onOption: message.id == model.messages.last?.id && !model.isRunning
                                     ? { model.send($0) } : nil,
                                 onOpenFile: { pane.open($0) },
+                                onOpenSharedFile: openSharedFile,
                                 onOpenReply: { openReply(message) })
                                 .transition(.scale(scale: 0.9, anchor: message.role == .user ? .bottomTrailing : .bottomLeading)
                                     .combined(with: .opacity))
@@ -651,3 +666,4 @@ private struct ProjectControl: View {
         .contentShape(Capsule())
     }
 }
+

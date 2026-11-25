@@ -19,6 +19,9 @@ struct ChatMessage: Identifiable {
     /// The files themselves, for messages sent in this run of the app
     /// (history from the server has only the names).
     var files: [Attachment] = []
+    /// Files another client (Field) stored and listed with the message; by position
+    /// in `attachments`, like `files`.
+    var sharedFiles: [SharedFile] = []
     /// What an assistant reply used, summed over its model round trips.
     var usage: TokenUsage?
 }
@@ -28,6 +31,9 @@ struct ChatMessage: Identifiable {
 struct Transcript {
     private(set) var messages: [ChatMessage] = []
     private var lastSource: AgentEvent.TextSource?
+    /// Field lists every file of the conversation with each message; a file is shown
+    /// only with the message that first listed it.
+    private var listedFileIDs: Set<String> = []
 
     /// Tokens and cost of the whole conversation.
     var usage: TokenUsage? {
@@ -44,7 +50,9 @@ struct Transcript {
         case .user(let text):
             // Sessions are shared with Field, which writes its uploads into the text.
             let shown = SharedSessionText.userMessage(text)
-            messages.append(ChatMessage(role: .user, text: shown.text, attachments: shown.attachments))
+            let new = shown.files.filter { listedFileIDs.insert($0.id).inserted }
+            messages.append(ChatMessage(
+                role: .user, text: shown.text, attachments: new.map(\.name), sharedFiles: new))
             lastSource = nil
         case .text(let text, let source):
             let index = replyIndex()
@@ -227,6 +235,29 @@ final class ChatModel: ObservableObject {
 
     init(api: TachyonAPI) {
         self.api = api
+    }
+
+    // MARK: - Shared files
+
+    /// What a file Field stored turns into on screen.
+    enum SharedFileContent {
+        /// Downloaded, for an image or text tab.
+        case file(Attachment)
+        /// Anything else (a PDF, say): a short-lived link to show in a web tab.
+        case link(URL)
+    }
+
+    /// Fetches a file another client stored, to show it beside the chat.
+    func load(_ file: SharedFile) async throws -> SharedFileContent {
+        let url = try await api.storedFileURL(key: file.id)
+        let isText = file.contentType.hasPrefix("text/")
+            || ["application/json", "application/xml"].contains(file.contentType)
+        guard file.isImage || isText else { return .link(url) }
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false else {
+            throw TachyonAPI.APIError.badResponse
+        }
+        return .file(Attachment(filename: file.name, contentType: file.contentType, data: data))
     }
 
     // MARK: - Sending
