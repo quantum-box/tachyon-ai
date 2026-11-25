@@ -236,9 +236,15 @@ private struct ChatView: View {
         // "Always" is remembered per host: mail.google.com does not cover docs.google.com.
         let host = page.url.host()?.lowercased() ?? ""
         if !Preferences.sharedPageHosts.contains(host) {
-            let answer = await withCheckedContinuation { continuation in
-                shareRequest = ShareRequest(title: page.title, url: page.url, answer: continuation)
+            // Stopping the reply or leaving the conversation cancels the read: close the prompt.
+            let answer = await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    shareRequest = ShareRequest(title: page.title, url: page.url, answer: continuation)
+                }
+            } onCancel: {
+                Task { @MainActor in answerShare(.deny) }
             }
+            guard !Task.isCancelled else { return ("The run was stopped.", true) }
             switch answer {
             case .deny:
                 return ("The user declined to share the page.", true)

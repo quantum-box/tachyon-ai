@@ -153,6 +153,8 @@ final class ChatModel: ObservableObject {
     /// The configured default chat model, known once the model list has loaded.
     private var defaultModel: String?
     private var turn: Task<Void, Never>?
+    /// Page reads the agent is waiting on; they end with the turn that asked for them.
+    private var pageReads: [Task<Void, Never>] = []
     /// Bumped whenever the open conversation changes, so stale work stops touching it.
     private var generation = 0
 
@@ -237,6 +239,8 @@ final class ChatModel: ObservableObject {
             }
             isRunning = false
             activity = nil
+            // The run is over, so nothing is waiting on a page read any more.
+            pageReads = []
             // The server names a conversation after its first turn.
             await refreshSessions()
         }
@@ -244,16 +248,20 @@ final class ChatModel: ObservableObject {
 
     /// Sends the open page (once the user agrees) to the agent, which waits for it.
     private func answerReadPage(sessionID: String, toolID: String) {
-        Task {
+        let generation = self.generation
+        pageReads.append(Task {
             let answer = await onReadPage?()
                 ?? (text: "No browser pane is available in this app.", isError: true)
+            // Stopped, or the conversation changed while the user was deciding: the run is gone.
+            guard !Task.isCancelled, generation == self.generation else { return }
             do {
                 try await api.submitToolResult(
                     sessionID: sessionID, toolID: toolID, result: answer.text, isError: answer.isError)
             } catch {
+                guard generation == self.generation else { return }
                 transcript.apply(.failure(error.localizedDescription))
             }
-        }
+        })
     }
 
     // MARK: - Attachments
@@ -289,6 +297,8 @@ final class ChatModel: ObservableObject {
     /// Closing the connection is how a run is cancelled; there is no cancel endpoint.
     func stop() {
         turn?.cancel()
+        pageReads.forEach { $0.cancel() }
+        pageReads = []
     }
 
     // MARK: - Conversations

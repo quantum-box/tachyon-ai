@@ -81,6 +81,10 @@ final class BrowserPaneModel: ObservableObject {
 
     /// The conversation the tabs belong to; nil for a new chat not sent yet.
     private var sessionID: String?
+    /// Tabs of the other conversations opened in this run, kept alive so switching back
+    /// keeps reply and file tabs, page history and half-typed forms. Saved URLs are only
+    /// for after a relaunch.
+    private var liveTabs: [String: (tabs: [BrowserTab], selected: BrowserTab.ID?)] = [:]
 
     private struct SavedTabs: Codable {
         var urls: [URL]
@@ -99,8 +103,18 @@ final class BrowserPaneModel: ObservableObject {
             save()
             return
         }
+        guard id != sessionID else { return }
         save()
+        // A new chat that was never sent has nowhere to come back to, so its tabs go.
+        if let current = sessionID {
+            liveTabs[current] = (tabs, selectedTabID)
+        }
         sessionID = id
+        if let id, let live = liveTabs.removeValue(forKey: id) {
+            tabs = live.tabs
+            selectedTabID = live.selected
+            return
+        }
         let saved = id.flatMap { Self.loadAll()[$0] }
         tabs = saved?.urls.map(makeTab) ?? []
         let selected = saved?.selected.flatMap { tabs.indices.contains($0) ? $0 : nil }
@@ -146,12 +160,19 @@ final class BrowserPaneModel: ObservableObject {
     }
 
     /// The selected tab's page as text for the agent: nil when no web page is open.
+    /// URL, title and text come from one evaluation, so they describe the same document
+    /// even if the tab navigates meanwhile: the URL decides whether the user is asked.
     func selectedPageText(limit: Int = 60_000) async -> (title: String, url: URL, text: String)? {
-        guard let page = selectedTab?.page, let url = page.url else { return nil }
-        let text = (try? await page.callJavaScript("return document.body ? document.body.innerText : ''"))
-            as? String ?? ""
+        guard let page = selectedTab?.page, page.url != nil else { return nil }
+        let snapshot = try? await page.callJavaScript("""
+            return { url: location.href, title: document.title,
+                     text: document.body ? document.body.innerText : "" };
+            """) as? [String: Any]
+        guard let snapshot, let url = (snapshot["url"] as? String).flatMap(URL.init(string:)),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        let text = snapshot["text"] as? String ?? ""
         let clipped = text.count > limit ? String(text.prefix(limit)) + "\n…(以下省略)" : text
-        return (page.title, url, clipped)
+        return (snapshot["title"] as? String ?? "", url, clipped)
     }
 
     /// The Tachyon web app, signed in with the pane's own login (it does not share the app's).
