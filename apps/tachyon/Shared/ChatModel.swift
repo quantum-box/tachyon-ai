@@ -62,7 +62,7 @@ struct Transcript {
             }
             messages[index].text += message
             messages[index].failed = true
-        case .activity, .openPage, .readPage:
+        case .activity, .openPage, .readPage, .workspace:
             break
         }
     }
@@ -83,6 +83,8 @@ final class ChatModel: ObservableObject {
     @Published private(set) var sessions: [SessionSummary] = []
     /// Why the conversation list could not be loaded, if it could not.
     @Published private(set) var sessionsError: String?
+    /// Why renaming or deleting a conversation failed, until the user dismisses it.
+    @Published var sessionActionError: String?
     /// The open conversation; nil for a new chat that has not been sent yet.
     @Published private(set) var sessionID: String? {
         didSet { Preferences.lastSessionID = sessionID }
@@ -112,6 +114,64 @@ final class ChatModel: ObservableObject {
     /// The open page's text for the agent, or why there is none (`isError`).
     /// May wait for the user to agree.
     var onReadPage: (() async -> (text: String, isError: Bool))?
+    /// Asks the user whether the agent may write a file in the project's folder.
+    /// Without it, writes are declined unless the project allows them.
+    var onConfirmWrite: ((Project, WorkspaceTools.WriteRequest) async -> Bool)?
+
+    // MARK: - Projects
+
+    @Published private(set) var projects = ProjectStore.load() {
+        didSet { ProjectStore.save(projects) }
+    }
+    /// The project a new chat will start in; the open conversation keeps its own.
+    @Published private(set) var newChatProjectID: String?
+
+    /// The open conversation's project, or the one a new chat starts in.
+    var currentProject: Project? {
+        let id = sessionID.map { id in sessions.first { $0.id == id }?.projectID } ?? newChatProjectID
+        return id.flatMap(project)
+    }
+
+    func project(_ id: String) -> Project? {
+        projects.first { $0.id == id }
+    }
+
+    func saveProject(_ project: Project) {
+        if let index = projects.firstIndex(where: { $0.id == project.id }) {
+            projects[index] = project
+        } else {
+            projects.append(project)
+        }
+    }
+
+    /// Forgets the project on this device. Its conversations stay on the server and
+    /// show under the history again.
+    func deleteProject(_ id: String) {
+        projects.removeAll { $0.id == id }
+        if newChatProjectID == id { newChatProjectID = nil }
+    }
+
+    /// Picks the project for the chat that has not been sent yet.
+    func setNewChatProject(_ id: String?) {
+        guard sessionID == nil else { return }
+        newChatProjectID = id
+    }
+
+    // MARK: - Pins
+
+    @Published private(set) var pinnedSessionIDs = Preferences.pinnedSessionIDs {
+        didSet { Preferences.pinnedSessionIDs = pinnedSessionIDs }
+    }
+
+    func isPinned(_ id: String) -> Bool { pinnedSessionIDs.contains(id) }
+
+    func togglePin(_ id: String) {
+        if let index = pinnedSessionIDs.firstIndex(of: id) {
+            pinnedSessionIDs.remove(at: index)
+        } else {
+            pinnedSessionIDs.insert(id, at: 0)
+        }
+    }
 
     @Published private(set) var models: [ModelInfo] = []
     /// The model new messages are sent to; nil until the default is known.
@@ -153,7 +213,8 @@ final class ChatModel: ObservableObject {
     /// The configured default chat model, known once the model list has loaded.
     private var defaultModel: String?
     private var turn: Task<Void, Never>?
-    /// Page reads the agent is waiting on; they end with the turn that asked for them.
+    /// Client tool calls (page reads, workspace tools) the agent is waiting on; they end
+    /// with the turn that asked for them.
     private var pageReads: [Task<Void, Never>] = []
     /// Bumped whenever the open conversation changes, so stale work stops touching it.
     private var generation = 0
@@ -190,6 +251,11 @@ final class ChatModel: ObservableObject {
         transcript.appendUser(task, files: files)
         isRunning = true
         activity = "接続中…"
+        let project = currentProject
+        var tools = clientTools
+        if project?.folderBookmark != nil {
+            tools += WorkspaceTools.definitions
+        }
 
         let generation = self.generation
         turn = Task {
@@ -198,14 +264,15 @@ final class ChatModel: ObservableObject {
                 if let existing = self.sessionID {
                     sessionID = existing
                 } else {
-                    sessionID = try await api.createSession()
+                    sessionID = try await api.createSession(projectID: project?.id)
                     guard generation == self.generation else { return }
+                    sessions.insert(
+                        SessionSummary(id: sessionID, name: nil, updatedAt: Date(), projectID: project?.id), at: 0)
                     self.sessionID = sessionID
-                    sessions.insert(SessionSummary(id: sessionID, name: nil, updatedAt: Date()), at: 0)
                 }
                 let events = api.execute(
                     sessionID: sessionID, task: task, model: selectedModel, effort: effort,
-                    attachments: files, clientTools: clientTools)
+                    attachments: files, clientTools: tools, instructions: project?.agentInstructions)
                 for try await event in events {
                     guard generation == self.generation else { return }
                     if case .usage(let usage) = event {
@@ -217,6 +284,9 @@ final class ChatModel: ObservableObject {
                     }
                     if case .readPage(let toolID) = event {
                         answerReadPage(sessionID: sessionID, toolID: toolID)
+                    }
+                    if case .workspace(let name, let toolID, let args) = event {
+                        answerWorkspace(name, args: args, project: project, sessionID: sessionID, toolID: toolID)
                     }
                     if case .activity(let description) = event {
                         activity = description
@@ -254,6 +324,37 @@ final class ChatModel: ObservableObject {
             let answer = await onReadPage?()
                 ?? (text: "No browser pane is available in this app.", isError: true)
             // Stopped, or the conversation changed while the user was deciding: the run is gone.
+            guard !Task.isCancelled, generation == self.generation else { return }
+            do {
+                try await api.submitToolResult(
+                    sessionID: sessionID, toolID: toolID, result: answer.text, isError: answer.isError)
+            } catch {
+                guard generation == self.generation else { return }
+                transcript.apply(.failure(error.localizedDescription))
+            }
+        })
+    }
+
+    /// Runs a workspace tool in the project's folder and sends the result to the agent.
+    private func answerWorkspace(
+        _ name: String, args: [String: Any], project: Project?, sessionID: String, toolID: String
+    ) {
+        let generation = self.generation
+        if name == WorkspaceTools.write {
+            activity = "ファイルを書き込み中…"
+        } else {
+            activity = "フォルダを読み込み中…"
+        }
+        pageReads.append(Task {
+            let answer: (text: String, isError: Bool)
+            if let project, let root = project.resolveFolder() {
+                answer = await WorkspaceTools.run(name, args: args, root: root) { [weak self] request in
+                    if project.allowsWritesWithoutAsking { return true }
+                    return await self?.onConfirmWrite?(project, request) ?? false
+                }
+            } else {
+                answer = ("The project's folder is not available on this device.", true)
+            }
             guard !Task.isCancelled, generation == self.generation else { return }
             do {
                 try await api.submitToolResult(
@@ -315,9 +416,38 @@ final class ChatModel: ObservableObject {
         open(last)
     }
 
-    func startNewChat() {
+    /// A new chat, in `projectID` or, by default, in the open conversation's project.
+    func startNewChat(in projectID: String?? = nil) {
+        let project = projectID ?? currentProject?.id
         resetConversation()
         sessionID = nil
+        newChatProjectID = project
+    }
+
+    func rename(_ id: String, to name: String) async {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        let old = sessions[index].name
+        sessions[index].name = name
+        do {
+            try await api.renameSession(id, to: name)
+        } catch {
+            if let index = sessions.firstIndex(where: { $0.id == id }) { sessions[index].name = old }
+            sessionActionError = error.localizedDescription
+        }
+    }
+
+    /// Deletes a conversation on the server. The open one makes way for a new chat.
+    func delete(_ id: String) async {
+        do {
+            try await api.deleteSession(id)
+        } catch {
+            sessionActionError = error.localizedDescription
+            return
+        }
+        if sessionID == id { startNewChat() }
+        sessions.removeAll { $0.id == id }
+        pinnedSessionIDs.removeAll { $0 == id }
     }
 
     func open(_ id: String) {

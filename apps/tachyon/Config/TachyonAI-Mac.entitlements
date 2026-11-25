@@ -11,8 +11,12 @@
     <!-- Tachyon API, OpenAI Realtime API. -->
     <key>com.apple.security.network.client</key>
     <true/>
-    <!-- Attaching files the user picks in the chat window. -->
-    <key>com.apple.security.files.user-selected.read-only</key>
+    <!-- Attaching files the user picks in the chat window, and the project folders the
+         agent reads and writes in. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <!-- Reopening a project's folder after a relaunch (security-scoped bookmarks). -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
     <true/>
     <!-- Importing Chrome's cookies into the browser pane without asking for the folder. -->
     <key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>

@@ -125,6 +125,8 @@ private struct ChatView: View {
     @State private var columns = NavigationSplitViewVisibility.all
     /// The agent's request to read the open page, waiting for the user's answer.
     @State private var shareRequest: ShareRequest?
+    /// The agent's request to write a file in the project's folder, waiting for the user.
+    @State private var writeRequest: WriteConfirmation?
     /// The pane opens at the width it was last left at.
     @State private var paneWidth = min(max(CGFloat(Preferences.browserPaneWidth), PaneDivider.range.lowerBound), PaneDivider.range.upperBound)
 
@@ -217,6 +219,19 @@ private struct ChatView: View {
             // in, adds a web view to a layout pass already under way.
             model.onOpenPage = { [pane] url in DispatchQueue.main.async { pane.open(url) } }
             model.onReadPage = { await readPageForAgent() }
+            model.onConfirmWrite = { project, request in await confirmWrite(project, request) }
+        }
+        .alert(
+            "ファイルを書き込みますか？",
+            isPresented: Binding(get: { writeRequest != nil }, set: { if !$0 { answerWrite(.deny) } }),
+            presenting: writeRequest
+        ) { confirmation in
+            Button(confirmation.request.exists ? "上書きする" : "作成する") { answerWrite(.once) }
+                .keyboardShortcut(.defaultAction)
+            Button("「\(confirmation.project.name)」では常に許可") { answerWrite(.always) }
+            Button("やめる", role: .cancel) { answerWrite(.deny) }
+        } message: { confirmation in
+            Text(writeMessage(confirmation))
         }
         .alert(
             "このページを AI に渡しますか？",
@@ -271,6 +286,50 @@ private struct ChatView: View {
         return ("Title: \(page.title)\nURL: \(page.url.absoluteString)\n\n\(page.text)", false)
     }
 
+    /// Asks before the agent writes into the project's folder.
+    private func confirmWrite(_ project: Project, _ request: WorkspaceTools.WriteRequest) async -> Bool {
+        let answer = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                // One prompt at a time: an older request still waiting is declined.
+                answerWrite(.deny)
+                writeRequest = WriteConfirmation(project: project, request: request, answer: continuation)
+            }
+        } onCancel: {
+            Task { @MainActor in answerWrite(.deny) }
+        }
+        switch answer {
+        case .deny:
+            return false
+        case .always:
+            var changed = model.project(project.id) ?? project
+            changed.allowsWritesWithoutAsking = true
+            model.saveProject(changed)
+            return true
+        case .once:
+            return true
+        }
+    }
+
+    private func writeMessage(_ confirmation: WriteConfirmation) -> String {
+        let request = confirmation.request
+        let lines = request.content.split(separator: "\n", omittingEmptySubsequences: false)
+        var preview = lines.prefix(12).joined(separator: "\n")
+        if preview.count > 600 { preview = String(preview.prefix(600)) + "…" }
+        if lines.count > 12 { preview += "\n…" }
+        let action = request.exists ? "上書き" : "新しく作成"
+        return """
+            AI が「\(confirmation.project.name)」のフォルダの \(request.path) を\(action)しようとしています (\(lines.count) 行)。
+
+            \(preview)
+            """
+    }
+
+    private func answerWrite(_ answer: ShareRequest.Answer) {
+        guard let request = writeRequest else { return }
+        writeRequest = nil
+        request.answer.resume(returning: answer)
+    }
+
     /// Resumes the waiting request exactly once.
     private func answerShare(_ answer: ShareRequest.Answer) {
         guard let request = shareRequest else { return }
@@ -304,38 +363,9 @@ private struct ChatView: View {
     // MARK: - Sidebar
 
     private var sidebar: some View {
-        List(selection: Binding(
-            get: { model.sessionID },
-            set: { id in
-                if let id { model.open(id) }
-            }
-        )) {
-            Section("履歴") {
-                ForEach(model.sessions) { session in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(session.name?.isEmpty == false ? session.name! : "新規チャット")
-                            .lineLimit(1)
-                        if let updatedAt = session.updatedAt {
-                            Text(updatedAt, format: .relative(presentation: .named))
-                                .zoomedFont(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                    .tag(session.id)
-                }
-            }
-        }
-        .navigationSplitViewColumnWidth(min: 180, ideal: 230, max: 320)
-        .scrollContentBackground(.hidden)
-        .overlay {
-            if model.sessions.isEmpty {
-                Text(model.sessionsError ?? "履歴はまだありません")
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 12)
-                    .zoomedFont(.callout)
-                    .foregroundStyle(.secondary)
-            }
+        ConversationList(model: model) { projectID in
+            withAnimation(.bouncy) { model.startNewChat(in: .some(projectID)) }
+            inputFocused = true
         }
     }
 
@@ -346,6 +376,7 @@ private struct ChatView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { composer }
             .frame(minWidth: 380, minHeight: 420)
             .navigationTitle(currentTitle)
+            .navigationSubtitle(model.currentProject?.name ?? "")
             // Files can also be dropped anywhere on the conversation.
             .dropDestination(for: URL.self) { urls, _ in
                 model.attach(urls: urls)
@@ -461,6 +492,7 @@ private struct ChatView: View {
 
             HStack(spacing: 8) {
                 AttachmentButton(model: model)
+                ProjectControl(model: model)
                 ModelControl(model: model, openSettings: openSettings)
                 Spacer(minLength: 0)
                 sendButton
@@ -502,6 +534,13 @@ private struct ShareRequest {
     let title: String
     let url: URL
     let answer: CheckedContinuation<Answer, Never>
+}
+
+/// The agent asked to write a file and waits for the user.
+private struct WriteConfirmation {
+    let project: Project
+    let request: WorkspaceTools.WriteRequest
+    let answer: CheckedContinuation<ShareRequest.Answer, Never>
 }
 
 /// The line between the conversation and the side pane; drag it to resize the pane.
@@ -548,4 +587,54 @@ private struct WindowBackdrop: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
+/// The project of the chat: a menu before the first message, a label after.
+private struct ProjectControl: View {
+    @ObservedObject var model: ChatModel
+
+    var body: some View {
+        if model.projects.isEmpty {
+            EmptyView()
+        } else if model.sessionID == nil {
+            Menu {
+                Picker("プロジェクト", selection: Binding(
+                    get: { model.newChatProjectID },
+                    set: { model.setNewChatProject($0) }
+                )) {
+                    Text("なし").tag(String?.none)
+                    ForEach(model.projects) { project in
+                        Text(project.name).tag(Optional(project.id))
+                    }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                capsule(chevron: true)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("新しい会話のプロジェクト")
+        } else if let project = model.currentProject {
+            capsule(chevron: false)
+                .help(project.folderPath ?? "この会話のプロジェクト")
+        }
+    }
+
+    private func capsule(chevron: Bool) -> some View {
+        let project = model.currentProject
+        return HStack(spacing: 5) {
+            Image(systemName: project?.folderPath == nil ? "folder" : "folder.fill")
+            Text(project?.name ?? "プロジェクトなし").lineLimit(1)
+            if chevron {
+                Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold))
+            }
+        }
+        .font(.callout.weight(.medium))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.quaternary, in: Capsule())
+        .contentShape(Capsule())
+    }
 }
