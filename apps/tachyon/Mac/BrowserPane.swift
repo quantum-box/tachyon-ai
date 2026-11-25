@@ -39,6 +39,7 @@ final class BrowserTab: Identifiable {
     }
 
     init(url: URL?, openInNewTab: @escaping @MainActor (URL) -> Void) {
+        Passkeys.requestAccessIfNeeded()
         // The shared, persistent store: sign-ins (and cookies imported from Chrome) last.
         var configuration = WebPage.Configuration()
         configuration.websiteDataStore = .default()

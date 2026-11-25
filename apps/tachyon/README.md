@@ -34,6 +34,8 @@ Mac 版はメニューバーに常駐する。
 - エージェントは、右のペインで選んでいるタブのページの文字 (タイトル、URL、本文。6万字まで) も読める (`read_browser_page`、結果を `/v1/llms/sessions/{id}/agent/tool-result` に返すツール)。渡す前に「渡す」「(サイト) は常に許可」「渡さない」を聞く。常に許可はホスト単位 (`mail.google.com` を許可しても `docs.google.com` は聞く) で、ペインの「…」>「ページの読み取りの常に許可を解除」でまとめて解除できる。
 - ブラウザの「…」とメニューバーの「ファイル」から Tachyon のサービス (Tachyon `https://app.n1.tachy.one`、Field `https://fieldv2.txcloud.app`、Library `https://library.n1.tachy.one`) を開ける。エージェントもこの一覧を知っていて、「field を開いて」なら URL を聞かずに開く。一覧は config.json の `sites` (`[{"name", "url", "aliases"}]`) で差し替えられる。アプリのログインとは別なので、最初の1回はペインの中でログインする。
 - ブラウザの「…」>「Chrome からログイン状態を読み込む…」で、選んだ Google Chrome のプロフィールの Cookie をすべてコピーする。値を復号する鍵 (キーチェーンの「Chrome Safe Storage」) を読むときに macOS が許可を求める。パスワードは読まない。App Sandbox の中でも Chrome のフォルダ (`~/Library/Application Support/Google/Chrome`) を読めるよう、エンタイトルメントに読み取りの例外を入れている。
+- ブラウザの中のパスキー (1Password や iCloud キーチェーンのパスキー、`navigator.credentials`) は、Apple が許可するエンタイトルメント `com.apple.developer.web-browser.public-key-credential` を持つビルド (Xcode / TestFlight 版) でだけ使える。持っていると、最初にウェブページを開いたときに macOS が「パスキーへのアクセス」を1回だけ尋ね (後からは「システム設定 > プライバシーとセキュリティ」で変えられる)、ログイン画面のパスキーボタンで macOS のパスキーのシートが出る。`scripts/build-app.sh` の版はエンタイトルメントなしで署名するので使えない。Tachyon / Field のパスキーの relying party は Cognito の `auth-pool.n1.tachy.one` で、`apple-app-site-association` を置けないため、Associated Domains では代わりにならない。Apple はこのエンタイトルメントの条件として Info.plist に http / https のスキームを載せることを求めるので、Mac 版はそれを載せていて、他のアプリから渡された http / https のリンクもペインの新しいタブで開く。
+- パスキーが使えない版での代わり: Chrome でパスキーを使ってログインしてから、ブラウザの「…」>「Chrome からログイン状態を読み込む…」でログイン状態を持ってくる。
 
 ## 音声入力
 
@@ -138,6 +140,8 @@ gh secret set APP_STORE_CONNECT_KEY_ID --body "<Key ID>"
 gh secret set APP_STORE_CONNECT_ISSUER_ID --body "<Issuer ID>"
 gh secret set APP_STORE_CONNECT_PRIVATE_KEY < AuthKey_XXXXXXXXXX.p8
 ```
+
+ブラウザのパスキー用のエンタイトルメント (`com.apple.developer.web-browser.public-key-credential`) は Apple の許可が要る。Account Holder が https://developer.apple.com/contact/request/macos-browsers-passkeys/ から申請し、許可されたら「Certificates, Identifiers & Profiles > Identifiers > `com.quantumbox.tachyonai` > Additional Capabilities」で有効にする。許可される前に `Config/TachyonAI-Mac.entitlements` にこれを入れると、プロビジョニングプロファイルに含まれないため Mac 版の署名が失敗する。
 
 署名用の証明書は保存しない。アーカイブは署名なし (Mac 版はエンタイトルメントを残すため ad-hoc 署名) で作り、書き出しのときに Xcode がクラウド上で管理する配布用証明書で署名する (API キーで認証)。
 
