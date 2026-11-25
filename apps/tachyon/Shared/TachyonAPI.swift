@@ -1,16 +1,21 @@
 import Foundation
 
-/// One step of an agent's reply, live or replayed from history.
 /// Tools the app runs itself; the agent calls them through `tool_call_pending` events.
 enum ClientTools {
     static let openInBrowser = "open_in_browser"
 
     /// Fire-and-forget: the agent goes on at once, and the page opens beside the chat.
-    static let openInBrowserDefinition: [String: Any] = [
+    /// `sites` are Tachyon's own services, so "open Field" needs no URL from the user.
+    static func openInBrowserDefinition(sites: [Site]) -> [String: Any] {
+        let known = sites.map { site in
+            "- " + ([site.name] + site.aliases).joined(separator: " / ") + ": " + site.url.absoluteString
+        }.joined(separator: "\n")
+        return [
         "name": openInBrowser,
         "description": "Open a web page in the browser pane next to the chat, so the user can see it. "
             + "Use it when the user asks to open or show a page, or when looking at the page "
-            + "itself would help them more than a summary.",
+            + "itself would help them more than a summary. When the user names one of these "
+            + "services, open its URL directly without asking which site they mean:\n" + known,
         "parameters": [
             "type": "object",
             "properties": [
@@ -19,7 +24,8 @@ enum ClientTools {
             "required": ["url"],
         ],
         "fire_and_forget": true,
-    ]
+        ]
+    }
 
     static let readBrowserPage = "read_browser_page"
 
@@ -37,6 +43,7 @@ enum ClientTools {
     ]
 }
 
+/// One step of an agent's reply, live or replayed from history.
 enum AgentEvent {
     /// Which kind of chunk a piece of reply text came from. Each kind streams as
     /// its own run of deltas; a change of kind starts a new paragraph.

@@ -64,6 +64,12 @@ final class ChatWindowController {
         pane.newTab()
     }
 
+    /// Opens a page in a new tab of the pane, opening the chat window if needed.
+    func open(_ url: URL) {
+        show()
+        pane.open(url)
+    }
+
     /// ⌘L: the address field of the open web tab, or of a new tab.
     func focusAddressBar() {
         show()
@@ -203,8 +209,13 @@ private struct ChatView: View {
             inputFocused = true
             pane.show(session: model.sessionID)
             // The agent may open pages beside the chat.
-            model.clientTools = [ClientTools.openInBrowserDefinition, ClientTools.readBrowserPageDefinition]
-            model.onOpenPage = { [pane] url in pane.open(url) }
+            model.clientTools = [
+                ClientTools.openInBrowserDefinition(sites: Settings.load().sites),
+                ClientTools.readBrowserPageDefinition,
+            ]
+            // After the current update: a tab created mid-update, while the reply streams
+            // in, adds a web view to a layout pass already under way.
+            model.onOpenPage = { [pane] url in DispatchQueue.main.async { pane.open(url) } }
             model.onReadPage = { await readPageForAgent() }
         }
         .alert(

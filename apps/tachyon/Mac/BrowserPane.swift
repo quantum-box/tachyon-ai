@@ -175,11 +175,6 @@ final class BrowserPaneModel: ObservableObject {
         return (snapshot["title"] as? String ?? "", url, clipped)
     }
 
-    /// The Tachyon web app, signed in with the pane's own login (it does not share the app's).
-    func openTachyon() {
-        open(Settings.load().webURL)
-    }
-
     func close(_ id: BrowserTab.ID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         tabs[index].page?.stopLoading()
@@ -289,7 +284,10 @@ struct BrowserPane: View {
             .help("新しいタブ (⌘T)")
 
             Menu {
-                Button("Tachyon を開く") { pane.openTachyon() }
+                // Signed in with the pane's own login, which does not share the app's.
+                ForEach(Settings.load().sites, id: \.self) { site in
+                    Button("\(site.name) を開く") { pane.open(site.url) }
+                }
                 Divider()
                 // Read when the menu opens, so the count is current.
                 let hosts = Preferences.sharedPageHosts
@@ -425,7 +423,12 @@ private struct BrowserTabView: View {
                 if page.url == nil, !page.isLoading {
                     Color.clear
                 } else {
-                    WebView(page)
+                    // The web view fills what it is given and its own size never reaches
+                    // the window's layout: a page that kept changing it (Field, opened while
+                    // a reply streamed in) looped AppKit's constraint passes and crashed.
+                    Color.clear
+                        .overlay { WebView(page) }
+                        .clipped()
                 }
                 if page.isLoading {
                     ProgressView(value: page.estimatedProgress)

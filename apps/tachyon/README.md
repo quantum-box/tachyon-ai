@@ -27,7 +27,7 @@ Mac 版はメニューバーに常駐する。
 - 右のペインには Web ページのほかに、返答の全文 (返答の下の「右で開く」、Markdown で表示) と、この起動中に送った添付ファイル (メッセージの添付をクリック、画像はそのまま、テキストは等幅) も開ける。これらのタブは会話に残さない。
 - エージェントには、ページを右のペインで開くツール (`open_in_browser`、API の `client_tools` で渡す fire-and-forget のツール) も渡している。「〜を開いて」と頼むと、エージェントがページを右に開く。
 - エージェントは、右のペインで選んでいるタブのページの文字 (タイトル、URL、本文。6万字まで) も読める (`read_browser_page`、結果を `/v1/llms/sessions/{id}/agent/tool-result` に返すツール)。渡す前に「渡す」「(サイト) は常に許可」「渡さない」を聞く。常に許可はホスト単位 (`mail.google.com` を許可しても `docs.google.com` は聞く) で、ペインの「…」>「ページの読み取りの常に許可を解除」でまとめて解除できる。
-- ブラウザの「…」>「Tachyon を開く」で Tachyon の Web 画面 (`https://app.n1.tachy.one`、config.json の `webUrl` で変更可) を開く。アプリのログインとは別なので、最初の1回はペインの中でログインする。
+- ブラウザの「…」とメニューバーの「ファイル」から Tachyon のサービス (Tachyon `https://app.n1.tachy.one`、Field `https://fieldv2.txcloud.app`、Library `https://library.n1.tachy.one`) を開ける。エージェントもこの一覧を知っていて、「field を開いて」なら URL を聞かずに開く。一覧は config.json の `sites` (`[{"name", "url", "aliases"}]`) で差し替えられる。アプリのログインとは別なので、最初の1回はペインの中でログインする。
 - ブラウザの「…」>「Chrome からログイン状態を読み込む…」で、選んだ Google Chrome のプロフィールの Cookie をすべてコピーする。値を復号する鍵 (キーチェーンの「Chrome Safe Storage」) を読むときに macOS が許可を求める。パスワードは読まない。App Sandbox の中でも Chrome のフォルダ (`~/Library/Application Support/Google/Chrome`) を読めるよう、エンタイトルメントに読み取りの例外を入れている。
 
 ## 音声入力

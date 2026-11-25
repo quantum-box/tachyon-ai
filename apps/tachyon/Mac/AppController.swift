@@ -465,6 +465,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fileMenu.addItem(withTitle: "新しいタブ", action: #selector(newTab), keyEquivalent: "t").target = self
         fileMenu.addItem(withTitle: "場所を開く…", action: #selector(openLocation), keyEquivalent: "l").target = self
         fileMenu.addItem(withTitle: "タブを閉じる", action: #selector(closeTab), keyEquivalent: "w").target = self
+        fileMenu.addItem(.separator())
+        for (index, site) in Settings.load().sites.enumerated() {
+            let item = fileMenu.addItem(withTitle: "\(site.name) を開く", action: #selector(openSite(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+        }
         addSubmenu(fileMenu, to: mainMenu)
 
         let windowMenu = NSMenu(title: "ウインドウ")
@@ -476,6 +482,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func newTab() {
         chatWindow.newTab()
+    }
+
+    @objc private func openSite(_ sender: NSMenuItem) {
+        let sites = Settings.load().sites
+        guard sites.indices.contains(sender.tag) else { return }
+        chatWindow.open(sites[sender.tag].url)
     }
 
     @objc private func openLocation() {
