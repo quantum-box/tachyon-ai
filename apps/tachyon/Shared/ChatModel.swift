@@ -239,8 +239,9 @@ final class ChatModel: ObservableObject {
             }
             isRunning = false
             activity = nil
-            // The run is over, so nothing is waiting on a page read any more.
-            pageReads = []
+            // The run is over (finished, failed or ended by the server): a prompt still
+            // open would answer a run that is gone.
+            cancelPageReads()
             // The server names a conversation after its first turn.
             await refreshSessions()
         }
@@ -297,6 +298,11 @@ final class ChatModel: ObservableObject {
     /// Closing the connection is how a run is cancelled; there is no cancel endpoint.
     func stop() {
         turn?.cancel()
+        cancelPageReads()
+    }
+
+    /// Ends page reads still waiting on the user, which also closes their prompt.
+    private func cancelPageReads() {
         pageReads.forEach { $0.cancel() }
         pageReads = []
     }

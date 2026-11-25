@@ -239,6 +239,9 @@ private struct ChatView: View {
             // Stopping the reply or leaving the conversation cancels the read: close the prompt.
             let answer = await withTaskCancellationHandler {
                 await withCheckedContinuation { continuation in
+                    // One prompt at a time: an older request still waiting is declined, so its
+                    // tool call gets an answer instead of hanging.
+                    answerShare(.deny)
                     shareRequest = ShareRequest(title: page.title, url: page.url, answer: continuation)
                 }
             } onCancel: {
