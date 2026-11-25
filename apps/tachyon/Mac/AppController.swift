@@ -460,11 +460,45 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         viewMenu.addItem(withTitle: "実際のサイズ", action: #selector(resetZoom), keyEquivalent: "0").target = self
         addSubmenu(viewMenu, to: mainMenu)
 
+        // Browser keys for the chat window's side pane; ⌘W closes a tab before the window.
+        let fileMenu = NSMenu(title: "ファイル")
+        fileMenu.addItem(withTitle: "新しいタブ", action: #selector(newTab), keyEquivalent: "t").target = self
+        fileMenu.addItem(withTitle: "場所を開く…", action: #selector(openLocation), keyEquivalent: "l").target = self
+        fileMenu.addItem(withTitle: "タブを閉じる", action: #selector(closeTab), keyEquivalent: "w").target = self
+        fileMenu.addItem(.separator())
+        for (index, site) in Settings.load().sites.enumerated() {
+            let item = fileMenu.addItem(withTitle: "\(site.name) を開く", action: #selector(openSite(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+        }
+        addSubmenu(fileMenu, to: mainMenu)
+
         let windowMenu = NSMenu(title: "ウインドウ")
-        windowMenu.addItem(withTitle: "閉じる", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(withTitle: "閉じる", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "W")
         addSubmenu(windowMenu, to: mainMenu)
 
         NSApp.mainMenu = mainMenu
+    }
+
+    @objc private func newTab() {
+        chatWindow.newTab()
+    }
+
+    @objc private func openSite(_ sender: NSMenuItem) {
+        let sites = Settings.load().sites
+        guard sites.indices.contains(sender.tag) else { return }
+        chatWindow.open(sites[sender.tag].url)
+    }
+
+    @objc private func openLocation() {
+        chatWindow.focusAddressBar()
+    }
+
+    /// The chat window closes a tab of its pane; other windows (settings) just close.
+    @objc private func closeTab() {
+        if !chatWindow.closeTab() {
+            NSApp.keyWindow?.performClose(nil)
+        }
     }
 
     private func addSubmenu(_ submenu: NSMenu, to menu: NSMenu) {

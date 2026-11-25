@@ -8,6 +8,8 @@ final class ChatWindowController {
     private let account: Account
     private let openSettings: () -> Void
     private var window: NSWindow?
+    /// The side pane; kept here so the menu's tab commands reach it.
+    private let pane = BrowserPaneModel()
 
     init(model: ChatModel, account: Account, openSettings: @escaping () -> Void) {
         self.model = model
@@ -20,7 +22,9 @@ final class ChatWindowController {
             // A hosting controller (not a bare hosting view) lets SwiftUI's toolbar and
             // title drive the window's own toolbar, which is drawn in Liquid Glass.
             let hosting = NSHostingController(
-                rootView: ChatView(model: model, account: account, openSettings: openSettings))
+                rootView: ChatView(
+                    model: model, account: account, pane: pane, openSettings: openSettings,
+                    widenWindow: { [weak self] in self?.widen(toAtLeast: $0) }))
             hosting.sceneBridgingOptions = [.toolbars, .title]
             // Otherwise the window grows to the split view's ideal size (the whole screen).
             hosting.sizingOptions = []
@@ -44,6 +48,8 @@ final class ChatWindowController {
             window.setFrameAutosaveName("Chat")
             self.window = window
             model.restoreLastConversation()
+            // The view appears before `window` is set, so it cannot do this itself.
+            if Preferences.browserPaneShown { widen(toAtLeast: ChatView.widthWithPane) }
         }
         window?.bringToFront()
         Task {
@@ -52,6 +58,47 @@ final class ChatWindowController {
         }
     }
 
+    /// ⌘T: a new tab in the pane, opening the chat window if needed.
+    func newTab() {
+        show()
+        pane.newTab()
+    }
+
+    /// Opens a page in a new tab of the pane, opening the chat window if needed.
+    func open(_ url: URL) {
+        show()
+        pane.open(url)
+    }
+
+    /// ⌘L: the address field of the open web tab, or of a new tab.
+    func focusAddressBar() {
+        show()
+        pane.focusAddressBar()
+    }
+
+    /// ⌘W while the chat window is in front: closes the pane's tab.
+    /// False when there is no tab to close, so the window itself closes.
+    func closeTab() -> Bool {
+        guard let window, window.isKeyWindow, pane.isShown, let id = pane.selectedTabID else { return false }
+        pane.close(id)
+        return true
+    }
+
+    /// Makes room for the browser pane, without leaving the screen.
+    private func widen(toAtLeast width: CGFloat) {
+        guard let window, window.frame.width < width,
+              let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+        var frame = window.frame
+        frame.size.width = min(width, visible.width)
+        if frame.maxX > visible.maxX {
+            frame.origin.x = max(visible.minX, visible.maxX - frame.width)
+        }
+        // After the SwiftUI update that asked for it, and without animation: resizing
+        // inside the update, while replies stream in, looped AppKit's layout.
+        DispatchQueue.main.async {
+            window.setFrame(frame, display: true, animate: false)
+        }
+    }
 }
 
 extension NSWindow {
@@ -71,8 +118,18 @@ extension NSWindow {
 private struct ChatView: View {
     @ObservedObject var model: ChatModel
     @ObservedObject var account: Account
+    @ObservedObject var pane: BrowserPaneModel
     let openSettings: () -> Void
+    let widenWindow: (CGFloat) -> Void
     @FocusState private var inputFocused: Bool
+    @State private var columns = NavigationSplitViewVisibility.all
+    /// The agent's request to read the open page, waiting for the user's answer.
+    @State private var shareRequest: ShareRequest?
+    /// The pane opens at the width it was last left at.
+    @State private var paneWidth = min(max(CGFloat(Preferences.browserPaneWidth), PaneDivider.range.lowerBound), PaneDivider.range.upperBound)
+
+    /// Sidebar, conversation and browser pane side by side.
+    static var widthWithPane: CGFloat { 800 + Preferences.browserPaneWidth }
 
     private static let suggestions = [
         "今日やることを整理したい",
@@ -97,13 +154,37 @@ private struct ChatView: View {
     }
 
     private var chat: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             sidebar
         } detail: {
-            conversation
+            // A plain panel rather than `.inspector`: the inspector column's real width
+            // drifted from the width its content was laid out at, clipping the pane.
+            HStack(spacing: 0) {
+                conversation
+                if pane.isShown {
+                    PaneDivider(width: $paneWidth)
+                    // Flexible below the saved width: a pane that insisted on its width made
+                    // AppKit grow the window mid-layout, which crashed in a layout loop.
+                    BrowserPane(pane: pane)
+                        .frame(minWidth: 240, idealWidth: paneWidth, maxWidth: paneWidth)
+                        .layoutPriority(1)
+                        .transition(.move(edge: .trailing))
+                }
+            }
+        }
+        .background {
+            // ⌘B shows and hides the conversation list, as in other Mac apps.
+            Button("サイドバー") {
+                withAnimation { columns = columns == .detailOnly ? .all : .detailOnly }
+            }
+            .keyboardShortcut("b", modifiers: .command)
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
         }
         .zoomedFont(.body)
         .environment(\.zoom, model.zoom)
+        .environment(\.openURL, OpenURLAction(handler: openLink))
         .background { WindowBackdrop().ignoresSafeArea() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -114,8 +195,105 @@ private struct ChatView: View {
                 .disabled(model.sessionID == nil && model.messages.isEmpty)
                 .help("新規チャット")
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    withAnimation { pane.isShown.toggle() }
+                } label: {
+                    Label("ブラウザ", systemImage: "sidebar.right")
+                }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .help(pane.isShown ? "ブラウザを隠す (⇧⌘B)" : "ブラウザを表示 (⇧⌘B)")
+            }
         }
-        .onAppear { inputFocused = true }
+        .onAppear {
+            inputFocused = true
+            pane.show(session: model.sessionID)
+            // The agent may open pages beside the chat.
+            model.clientTools = [
+                ClientTools.openInBrowserDefinition(sites: Settings.load().sites),
+                ClientTools.readBrowserPageDefinition,
+            ]
+            // After the current update: a tab created mid-update, while the reply streams
+            // in, adds a web view to a layout pass already under way.
+            model.onOpenPage = { [pane] url in DispatchQueue.main.async { pane.open(url) } }
+            model.onReadPage = { await readPageForAgent() }
+        }
+        .alert(
+            "このページを AI に渡しますか？",
+            isPresented: Binding(get: { shareRequest != nil }, set: { if !$0 { answerShare(.deny) } }),
+            presenting: shareRequest
+        ) { request in
+            Button("渡す") { answerShare(.once) }
+                .keyboardShortcut(.defaultAction)
+            Button("\(request.url.host() ?? "このサイト") は常に許可") { answerShare(.always) }
+            Button("渡さない", role: .cancel) { answerShare(.deny) }
+        } message: { request in
+            Text("「\(request.title.isEmpty ? request.url.host() ?? "" : request.title)」\n\(request.url.absoluteString)\n\nAI が右のペインのページの文字を読もうとしています。ログイン中のページなら、その内容も送られます。「常に許可」はこのサイトだけに効き、ペインの「…」メニューで解除できます。")
+        }
+        .onChange(of: pane.isShown) {
+            if pane.isShown { widenWindow(Self.widthWithPane) }
+        }
+        .onChange(of: model.sessionID) { old, new in
+            // A new chat gets its ID mid-send; its tabs stay with it.
+            pane.show(session: new, adopting: old == nil && model.isRunning)
+        }
+    }
+
+    /// The open page for the agent, after asking the user unless they always allow it.
+    private func readPageForAgent() async -> (text: String, isError: Bool) {
+        guard let page = await pane.selectedPageText() else {
+            return ("The browser pane has no web page open.", true)
+        }
+        // "Always" is remembered per host: mail.google.com does not cover docs.google.com.
+        let host = page.url.host()?.lowercased() ?? ""
+        if !Preferences.sharedPageHosts.contains(host) {
+            // Stopping the reply or leaving the conversation cancels the read: close the prompt.
+            let answer = await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    // One prompt at a time: an older request still waiting is declined, so its
+                    // tool call gets an answer instead of hanging.
+                    answerShare(.deny)
+                    shareRequest = ShareRequest(title: page.title, url: page.url, answer: continuation)
+                }
+            } onCancel: {
+                Task { @MainActor in answerShare(.deny) }
+            }
+            guard !Task.isCancelled else { return ("The run was stopped.", true) }
+            switch answer {
+            case .deny:
+                return ("The user declined to share the page.", true)
+            case .always:
+                Preferences.sharedPageHosts.insert(host)
+            case .once:
+                break
+            }
+        }
+        return ("Title: \(page.title)\nURL: \(page.url.absoluteString)\n\n\(page.text)", false)
+    }
+
+    /// Resumes the waiting request exactly once.
+    private func answerShare(_ answer: ShareRequest.Answer) {
+        guard let request = shareRequest else { return }
+        shareRequest = nil
+        request.answer.resume(returning: answer)
+    }
+
+    /// A reply in full, titled after its first line.
+    private func openReply(_ message: ChatMessage) {
+        let firstLine = message.text.split(separator: "\n").first.map(String.init) ?? ""
+        let title = firstLine.trimmingCharacters(in: CharacterSet(charactersIn: "#*> -").union(.whitespaces))
+        pane.openDocument(
+            title: title.isEmpty ? "返答" : String(title.prefix(30)), text: message.text, isMarkdown: true)
+    }
+
+    /// Web links in the chat open in the browser pane; ⌘-click opens them in the default browser.
+    private func openLink(_ url: URL) -> OpenURLAction.Result {
+        guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              !NSEvent.modifierFlags.contains(.command) else {
+            return .systemAction
+        }
+        pane.open(url)
+        return .handled
     }
 
     private func startNewChat() {
@@ -201,7 +379,9 @@ private struct ChatView: View {
                                 message: message,
                                 // Only the newest question can still be answered.
                                 onOption: message.id == model.messages.last?.id && !model.isRunning
-                                    ? { model.send($0) } : nil)
+                                    ? { model.send($0) } : nil,
+                                onOpenFile: { pane.open($0) },
+                                onOpenReply: { openReply(message) })
                                 .transition(.scale(scale: 0.9, anchor: message.role == .user ? .bottomTrailing : .bottomLeading)
                                     .combined(with: .opacity))
                         }
@@ -312,6 +492,47 @@ private struct ChatView: View {
         .buttonStyle(.plain)
         .disabled(!model.isRunning && !model.canSend)
         .help(model.isRunning ? "停止" : "送信")
+    }
+}
+
+/// The agent asked to read the open page and waits for the user.
+private struct ShareRequest {
+    enum Answer { case once, always, deny }
+
+    let title: String
+    let url: URL
+    let answer: CheckedContinuation<Answer, Never>
+}
+
+/// The line between the conversation and the side pane; drag it to resize the pane.
+private struct PaneDivider: View {
+    @Binding var width: CGFloat
+    @State private var startWidth: CGFloat?
+
+    static let range: ClosedRange<CGFloat> = 300...1000
+
+    var body: some View {
+        // A 1pt line in a strip wide enough to grab.
+        Rectangle()
+            .fill(.separator)
+            .frame(width: 1)
+            .padding(.horizontal, 3)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .pointerStyle(.columnResize)
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { drag in
+                        let start = startWidth ?? width
+                        startWidth = start
+                        // Dragging left widens the pane.
+                        width = min(max(start - drag.translation.width, Self.range.lowerBound),
+                                    Self.range.upperBound)
+                    }
+                    .onEnded { _ in
+                        startWidth = nil
+                        Preferences.browserPaneWidth = Double(width)
+                    })
     }
 }
 
