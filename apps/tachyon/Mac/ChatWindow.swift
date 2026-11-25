@@ -129,9 +129,14 @@ private struct ChatView: View {
     @State private var writeRequest: WriteConfirmation?
     /// The pane opens at the width it was last left at.
     @State private var paneWidth = min(max(CGFloat(Preferences.browserPaneWidth), PaneDivider.range.lowerBound), PaneDivider.range.upperBound)
+    /// Width of the conversation and pane together, so the pane can grow until the
+    /// conversation reaches its minimum.
+    @State private var detailWidth: CGFloat = 0
 
     /// Sidebar, conversation and browser pane side by side.
     static var widthWithPane: CGFloat { 800 + Preferences.browserPaneWidth }
+    /// The conversation stays readable at this width however wide the pane is dragged.
+    static let conversationMinWidth: CGFloat = 280
 
     private static let suggestions = [
         "今日やることを整理したい",
@@ -164,7 +169,8 @@ private struct ChatView: View {
             HStack(spacing: 0) {
                 conversation
                 if pane.isShown {
-                    PaneDivider(width: $paneWidth)
+                    PaneDivider(width: $paneWidth,
+                                maxWidth: detailWidth - Self.conversationMinWidth - PaneDivider.thickness)
                     // Flexible below the saved width: a pane that insisted on its width made
                     // AppKit grow the window mid-layout, which crashed in a layout loop.
                     BrowserPane(pane: pane)
@@ -173,6 +179,7 @@ private struct ChatView: View {
                         .transition(.move(edge: .trailing))
                 }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailWidth = $0 }
         }
         .background {
             // ⌘B shows and hides the conversation list, as in other Mac apps.
@@ -374,7 +381,7 @@ private struct ChatView: View {
     private var conversation: some View {
         transcript
             .safeAreaInset(edge: .bottom, spacing: 0) { composer }
-            .frame(minWidth: 380, minHeight: 420)
+            .frame(minWidth: Self.conversationMinWidth, minHeight: 420)
             .navigationTitle(currentTitle)
             .navigationSubtitle(model.currentProject?.name ?? "")
             // Files can also be dropped anywhere on the conversation.
@@ -546,9 +553,13 @@ private struct WriteConfirmation {
 /// The line between the conversation and the side pane; drag it to resize the pane.
 private struct PaneDivider: View {
     @Binding var width: CGFloat
+    /// The widest the pane can be in the window right now.
+    var maxWidth: CGFloat
     @State private var startWidth: CGFloat?
 
-    static let range: ClosedRange<CGFloat> = 300...1000
+    static let range: ClosedRange<CGFloat> = 300...4000
+    /// The 1pt line plus its grab padding.
+    static let thickness: CGFloat = 7
 
     var body: some View {
         // A 1pt line in a strip wide enough to grab.
@@ -565,8 +576,10 @@ private struct PaneDivider: View {
                         let start = startWidth ?? width
                         startWidth = start
                         // Dragging left widens the pane.
-                        width = min(max(start - drag.translation.width, Self.range.lowerBound),
-                                    Self.range.upperBound)
+                        // Capped at the room left in the window, so dragging back
+                        // responds at once instead of first unwinding an overshoot.
+                        let upper = max(Self.range.lowerBound, min(Self.range.upperBound, maxWidth))
+                        width = min(max(start - drag.translation.width, Self.range.lowerBound), upper)
                     }
                     .onEnded { _ in
                         startWidth = nil
