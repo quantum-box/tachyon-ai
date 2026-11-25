@@ -19,5 +19,9 @@
     <array>
         <string>/Library/Application Support/Google/Chrome/</string>
     </array>
+    <!-- Passkeys (1Password, iCloud Keychain) for any site in the browser pane.
+         Granted by Apple on request; signing fails until it is on the App ID. -->
+    <key>com.apple.developer.web-browser.public-key-credential</key>
+    <true/>
 </dict>
 </plist>

@@ -110,6 +110,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return true
     }
 
+    /// Web links sent to the app (it lists http and https in its Info.plist, which Apple
+    /// asks of apps with the browser passkey entitlement) open in the browser pane.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            chatWindow.open(url)
+        }
+    }
+
     // MARK: - Dictation
 
     private func beginDictation() {
