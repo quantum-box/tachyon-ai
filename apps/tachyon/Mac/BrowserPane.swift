@@ -14,6 +14,9 @@ final class BrowserTab: Identifiable {
 
     let id = UUID()
     let content: Content
+    /// A page whose address stops working soon (a short-lived storage link), so it
+    /// is not saved for after a relaunch.
+    var isTemporary = false
 
     /// The page of a web tab.
     var page: WebPage? {
@@ -121,9 +124,11 @@ final class BrowserPaneModel: ObservableObject {
         selectedTabID = selected.map { tabs[$0].id } ?? tabs.first?.id
     }
 
-    /// Opens `url` in a new tab and brings it to the front.
-    func open(_ url: URL) {
+    /// Opens `url` in a new tab and brings it to the front. A `temporary` address
+    /// (one that expires) is left out of the tabs saved for after a relaunch.
+    func open(_ url: URL, temporary: Bool = false) {
         let tab = makeTab(url)
+        tab.isTemporary = temporary
         insert(tab)
     }
 
@@ -191,7 +196,7 @@ final class BrowserPaneModel: ObservableObject {
         guard let sessionID else { return }
         var all = Self.loadAll()
         // Only web pages come back; empty tabs and chat content do not.
-        let open = tabs.filter { $0.page?.url != nil }
+        let open = tabs.filter { $0.page?.url != nil && !$0.isTemporary }
         if open.isEmpty {
             all[sessionID] = nil
         } else {

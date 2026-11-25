@@ -401,13 +401,20 @@ private struct ChatView: View {
 
     /// Downloads a file Field stored and shows it in the side pane.
     private func openSharedFile(_ file: SharedFile) {
+        // The pane shows the open conversation's tabs; if the user moves to another
+        // conversation before the file arrives, it no longer belongs there.
+        let session = model.sessionID
         Task {
             do {
-                switch try await model.load(file) {
+                let content = try await model.load(file)
+                guard model.sessionID == session else { return }
+                switch content {
                 case .file(let attachment): pane.open(attachment)
-                case .link(let url): pane.open(url)
+                // The link expires in minutes, so the tab is not restored after a relaunch.
+                case .link(let url): pane.open(url, temporary: true)
                 }
             } catch {
+                guard model.sessionID == session else { return }
                 model.attachmentError = "「\(file.name)」を開けませんでした: \(error.localizedDescription)"
             }
         }
