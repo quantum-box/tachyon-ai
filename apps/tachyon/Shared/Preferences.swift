@@ -55,6 +55,30 @@ enum Preferences {
         set { UserDefaults.standard.set(newValue, forKey: "zoom") }
     }
 
+    /// Whether the chat window's browser pane is open.
+    static var browserPaneShown: Bool {
+        get { UserDefaults.standard.bool(forKey: "browserPaneShown") }
+        set { UserDefaults.standard.set(newValue, forKey: "browserPaneShown") }
+    }
+
+    /// Hosts whose pages the agent may read from the browser pane without asking.
+    static var sharedPageHosts: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: "sharedPageHosts") ?? []) }
+        set { UserDefaults.standard.set(newValue.sorted(), forKey: "sharedPageHosts") }
+    }
+
+    /// The browser pane's width, as the user last left it.
+    static var browserPaneWidth: Double {
+        get { UserDefaults.standard.object(forKey: "browserPaneWidth") as? Double ?? 440 }
+        set { UserDefaults.standard.set(newValue, forKey: "browserPaneWidth") }
+    }
+
+    /// The browser pane's tabs of each conversation, as JSON.
+    static var browserTabs: Data? {
+        get { UserDefaults.standard.data(forKey: "browserTabs") }
+        set { UserDefaults.standard.set(newValue, forKey: "browserTabs") }
+    }
+
     /// The conversation that was open, reopened at the next launch.
     static var lastSessionID: String? {
         get { UserDefaults.standard.string(forKey: "lastSessionID") }

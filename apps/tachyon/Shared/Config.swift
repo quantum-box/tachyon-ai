@@ -17,6 +17,8 @@ struct Settings {
     var apiURL = URL(string: "https://api.n1.tachy.one")!
     var realtimeURL = URL(string: "wss://api.openai.com/v1/realtime")!
     var cognitoDomain = URL(string: "https://auth-pool.n1.tachy.one")!
+    /// The Tachyon web app, opened in the chat window's side pane.
+    var webURL = URL(string: "https://app.n1.tachy.one")!
     /// tachyon-cli-client: a public OAuth client (PKCE, no secret).
     var cognitoClientID = "4101nun74fvfusnlsanc00urke"
     var language = "ja"
@@ -36,6 +38,7 @@ struct Settings {
         var apiURL: String?
         var realtimeURL: String?
         var cognitoDomain: String?
+        var webUrl: String?
         var cognitoClientId: String?
         var language: String?
         var transcriptionModel: String?
@@ -60,6 +63,7 @@ struct Settings {
         if let url = file.apiURL.flatMap(URL.init(string:)) { settings.apiURL = url }
         if let url = file.realtimeURL.flatMap(URL.init(string:)) { settings.realtimeURL = url }
         if let url = file.cognitoDomain.flatMap(URL.init(string:)) { settings.cognitoDomain = url }
+        if let url = file.webUrl.flatMap(URL.init(string:)) { settings.webURL = url }
         if let id = file.cognitoClientId, !id.isEmpty { settings.cognitoClientID = id }
         if let language = file.language, !language.isEmpty { settings.language = language }
         if let model = file.transcriptionModel { settings.transcriptionModel = model }

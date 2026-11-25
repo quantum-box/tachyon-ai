@@ -14,6 +14,9 @@ struct ChatMessage: Identifiable {
     var options: [String] = []
     /// Names of the files sent with a user message.
     var attachments: [String] = []
+    /// The files themselves, for messages sent in this run of the app
+    /// (history from the server has only the names).
+    var files: [Attachment] = []
     /// What an assistant reply used, summed over its model round trips.
     var usage: TokenUsage?
 }
@@ -29,8 +32,8 @@ struct Transcript {
         messages.compactMap(\.usage).reduce(nil) { total, next in (total ?? TokenUsage()) + next }
     }
 
-    mutating func appendUser(_ text: String, attachments: [String]) {
-        messages.append(ChatMessage(role: .user, text: text, attachments: attachments))
+    mutating func appendUser(_ text: String, files: [Attachment]) {
+        messages.append(ChatMessage(role: .user, text: text, attachments: files.map(\.filename), files: files))
         lastSource = nil
     }
 
@@ -59,7 +62,7 @@ struct Transcript {
             }
             messages[index].text += message
             messages[index].failed = true
-        case .activity:
+        case .activity, .openPage, .readPage:
             break
         }
     }
@@ -101,6 +104,14 @@ final class ChatModel: ObservableObject {
     func resetTotalUsage() {
         totalUsage = TokenUsage()
     }
+
+    /// Tools the app runs itself, offered to the agent: the Mac's side pane. None on iOS.
+    var clientTools: [[String: Any]] = []
+    /// Shows a page the agent asked to open (live replies only, never history).
+    var onOpenPage: ((URL) -> Void)?
+    /// The open page's text for the agent, or why there is none (`isError`).
+    /// May wait for the user to agree.
+    var onReadPage: (() async -> (text: String, isError: Bool))?
 
     @Published private(set) var models: [ModelInfo] = []
     /// The model new messages are sent to; nil until the default is known.
@@ -174,7 +185,7 @@ final class ChatModel: ObservableObject {
             attachments = []
             attachmentError = nil
         }
-        transcript.appendUser(task, attachments: files.map(\.filename))
+        transcript.appendUser(task, files: files)
         isRunning = true
         activity = "接続中…"
 
@@ -192,12 +203,18 @@ final class ChatModel: ObservableObject {
                 }
                 let events = api.execute(
                     sessionID: sessionID, task: task, model: selectedModel, effort: effort,
-                    attachments: files)
+                    attachments: files, clientTools: clientTools)
                 for try await event in events {
                     guard generation == self.generation else { return }
                     if case .usage(let usage) = event {
                         // Only live replies count; a conversation reopened from history does not.
                         totalUsage = totalUsage + usage
+                    }
+                    if case .openPage(let url) = event {
+                        onOpenPage?(url)
+                    }
+                    if case .readPage(let toolID) = event {
+                        answerReadPage(sessionID: sessionID, toolID: toolID)
                     }
                     if case .activity(let description) = event {
                         activity = description
@@ -222,6 +239,20 @@ final class ChatModel: ObservableObject {
             activity = nil
             // The server names a conversation after its first turn.
             await refreshSessions()
+        }
+    }
+
+    /// Sends the open page (once the user agrees) to the agent, which waits for it.
+    private func answerReadPage(sessionID: String, toolID: String) {
+        Task {
+            let answer = await onReadPage?()
+                ?? (text: "No browser pane is available in this app.", isError: true)
+            do {
+                try await api.submitToolResult(
+                    sessionID: sessionID, toolID: toolID, result: answer.text, isError: answer.isError)
+            } catch {
+                transcript.apply(.failure(error.localizedDescription))
+            }
         }
     }
 

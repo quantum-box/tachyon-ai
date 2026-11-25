@@ -1,6 +1,42 @@
 import Foundation
 
 /// One step of an agent's reply, live or replayed from history.
+/// Tools the app runs itself; the agent calls them through `tool_call_pending` events.
+enum ClientTools {
+    static let openInBrowser = "open_in_browser"
+
+    /// Fire-and-forget: the agent goes on at once, and the page opens beside the chat.
+    static let openInBrowserDefinition: [String: Any] = [
+        "name": openInBrowser,
+        "description": "Open a web page in the browser pane next to the chat, so the user can see it. "
+            + "Use it when the user asks to open or show a page, or when looking at the page "
+            + "itself would help them more than a summary.",
+        "parameters": [
+            "type": "object",
+            "properties": [
+                "url": ["type": "string", "description": "The http or https URL to open."],
+            ],
+            "required": ["url"],
+        ],
+        "fire_and_forget": true,
+    ]
+
+    static let readBrowserPage = "read_browser_page"
+
+    /// The agent waits for the result, which the app sends once the user agrees.
+    static let readBrowserPageDefinition: [String: Any] = [
+        "name": readBrowserPage,
+        "description": "Read the text of the page open in the browser pane next to the chat: its title, "
+            + "URL and visible text. Pages there can be signed in (mail, internal tools), so use it "
+            + "when the user refers to the page they are looking at. The user is asked before the "
+            + "page is shared and may decline.",
+        "parameters": ["type": "object", "properties": [String: Any]()],
+        "fire_and_forget": false,
+        // Long enough for the user to answer the prompt.
+        "timeout_seconds": 300,
+    ]
+}
+
 enum AgentEvent {
     /// Which kind of chunk a piece of reply text came from. Each kind streams as
     /// its own run of deltas; a change of kind starts a new paragraph.
@@ -21,6 +57,10 @@ enum AgentEvent {
     /// What the agent is doing right now (thinking, running a tool).
     case activity(String)
     case failure(String)
+    /// The agent asked to show a page beside the chat (the `open_in_browser` client tool).
+    case openPage(URL)
+    /// The agent asked for the open page's text; it waits for `submitToolResult` with `toolID`.
+    case readPage(toolID: String)
 }
 
 struct ModelInfo: Identifiable, Equatable {
@@ -147,7 +187,7 @@ final class TachyonAPI {
     /// Cancelling the consuming task closes the connection, which stops the run.
     func execute(
         sessionID: String, task: String, model: String?, effort: ReasoningEffort,
-        attachments: [Attachment] = []
+        attachments: [Attachment] = [], clientTools: [[String: Any]] = []
     ) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             let work = Task { @MainActor in
@@ -160,6 +200,9 @@ final class TachyonAPI {
                         // An allowlist: the agent may search the web and read pages, nothing else.
                         "tool_access": Self.webTools,
                     ]
+                    if !clientTools.isEmpty {
+                        body["client_tools"] = clientTools
+                    }
                     if let effort = effort.apiValue, ReasoningEffort.isSupported(by: model) {
                         body["reasoning_effort"] = effort
                     }
@@ -246,6 +289,17 @@ final class TachyonAPI {
                 cost: chunk["total_cost"] as? Double))]
         case "thinking":
             return chunk["is_finished"] as? Bool == true ? [] : [.activity("考え中…")]
+        case "tool_call_pending":
+            if chunk["tool_name"] as? String == ClientTools.readBrowserPage,
+               let toolID = chunk["tool_id"] as? String {
+                return [.readPage(toolID: toolID)]
+            }
+            // Fire-and-forget client tools: the server does not wait for a result.
+            guard chunk["tool_name"] as? String == ClientTools.openInBrowser,
+                  let args = chunk["args"] as? [String: Any],
+                  let string = args["url"] as? String, let url = URL(string: string),
+                  ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return [] }
+            return [.openPage(url)]
         case "tool_call":
             let name = chunk["tool_name"] as? String ?? "tool"
             return [.activity(toolTitles[name] ?? "\(name) を実行中…")]
@@ -262,6 +316,16 @@ final class TachyonAPI {
     // MARK: - Models
 
     /// The models this tenant can use for agent chat, and the configured default.
+    /// Answers a client tool call the agent is waiting on.
+    func submitToolResult(sessionID: String, toolID: String, result: String, isError: Bool) async throws {
+        let config = try await auth.config()
+        let request = try makeRequest(
+            config, "POST", "v1/llms/sessions/\(sessionID)/agent/tool-result",
+            body: ["tool_id": toolID, "result": result, "is_error": isError])
+        let (data, response) = try await session.data(for: request)
+        try Self.check(response, data)
+    }
+
     func listModels() async throws -> (models: [ModelInfo], defaultModel: String) {
         let config = try await auth.config()
         let request = try makeRequest(config, "GET", "v1/llms/models")
