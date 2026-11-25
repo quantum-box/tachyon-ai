@@ -68,6 +68,8 @@ enum AgentEvent {
     case openPage(URL)
     /// The agent asked for the open page's text; it waits for `submitToolResult` with `toolID`.
     case readPage(toolID: String)
+    /// The agent called one of the project folder's tools; it waits for `submitToolResult`.
+    case workspace(name: String, toolID: String, args: [String: Any])
 }
 
 struct ModelInfo: Identifiable, Equatable {
@@ -81,6 +83,8 @@ struct SessionSummary: Identifiable, Equatable {
     let id: String
     var name: String?
     var updatedAt: Date?
+    /// The project the conversation was started in (the `project_id` in its metadata).
+    var projectID: String?
 }
 
 /// Calls to the Tachyon public API as the signed-in user.
@@ -176,9 +180,14 @@ final class TachyonAPI {
     // MARK: - Agent chat
 
     /// Starts a conversation. Follow-up messages reuse the returned session id.
-    func createSession() async throws -> String {
+    /// The project is kept in the session's metadata, which can only be set here.
+    func createSession(projectID: String?) async throws -> String {
         let config = try await auth.config()
-        let request = try makeRequest(config, "POST", "v1/llms/sessions", body: [:])
+        var body: [String: Any] = [:]
+        if let projectID {
+            body["metadata"] = ["project_id": projectID]
+        }
+        let request = try makeRequest(config, "POST", "v1/llms/sessions", body: body)
         let (data, response) = try await session.data(for: request)
         try Self.check(response, data)
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -194,7 +203,7 @@ final class TachyonAPI {
     /// Cancelling the consuming task closes the connection, which stops the run.
     func execute(
         sessionID: String, task: String, model: String?, effort: ReasoningEffort,
-        attachments: [Attachment] = [], clientTools: [[String: Any]] = []
+        attachments: [Attachment] = [], clientTools: [[String: Any]] = [], instructions: String? = nil
     ) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             let work = Task { @MainActor in
@@ -209,6 +218,9 @@ final class TachyonAPI {
                     ]
                     if !clientTools.isEmpty {
                         body["client_tools"] = clientTools
+                    }
+                    if let instructions, !instructions.isEmpty {
+                        body["user_custom_instructions"] = instructions
                     }
                     if let effort = effort.apiValue, ReasoningEffort.isSupported(by: model) {
                         body["reasoning_effort"] = effort
@@ -301,6 +313,10 @@ final class TachyonAPI {
                let toolID = chunk["tool_id"] as? String {
                 return [.readPage(toolID: toolID)]
             }
+            if let name = chunk["tool_name"] as? String, WorkspaceTools.names.contains(name),
+               let toolID = chunk["tool_id"] as? String {
+                return [.workspace(name: name, toolID: toolID, args: chunk["args"] as? [String: Any] ?? [:])]
+            }
             // Fire-and-forget client tools: the server does not wait for a result.
             guard chunk["tool_name"] as? String == ClientTools.openInBrowser,
                   let args = chunk["args"] as? [String: Any],
@@ -367,8 +383,28 @@ final class TachyonAPI {
         return sessions.compactMap { item in
             guard let id = item["id"] as? String else { return nil }
             let updated = (item["updated_at"] as? String ?? item["created_at"] as? String).flatMap(Self.parseDate)
-            return SessionSummary(id: id, name: item["name"] as? String, updatedAt: updated)
+            let metadata = item["metadata"] as? [String: Any]
+            return SessionSummary(
+                id: id, name: item["name"] as? String, updatedAt: updated,
+                projectID: metadata?["project_id"] as? String)
         }
+    }
+
+    /// Renames a conversation. The server names one only after its first turn, so a
+    /// name given later stays.
+    func renameSession(_ sessionID: String, to name: String) async throws {
+        let config = try await auth.config()
+        let request = try makeRequest(config, "PATCH", "v1/llms/sessions/\(sessionID)", body: ["name": name])
+        let (data, response) = try await session.data(for: request)
+        try Self.check(response, data)
+    }
+
+    /// Deletes a conversation and its messages for good.
+    func deleteSession(_ sessionID: String) async throws {
+        let config = try await auth.config()
+        let request = try makeRequest(config, "DELETE", "v1/llms/sessions/\(sessionID)")
+        let (data, response) = try await session.data(for: request)
+        try Self.check(response, data)
     }
 
     /// Everything said in a conversation so far, oldest first.

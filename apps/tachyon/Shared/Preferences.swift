@@ -61,6 +61,12 @@ enum Preferences {
         set { UserDefaults.standard.set(newValue, forKey: "browserPaneShown") }
     }
 
+    /// Conversations pinned to the top of the list, most recently pinned first.
+    static var pinnedSessionIDs: [String] {
+        get { UserDefaults.standard.stringArray(forKey: "pinnedSessionIDs") ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: "pinnedSessionIDs") }
+    }
+
     /// Hosts whose pages the agent may read from the browser pane without asking.
     static var sharedPageHosts: Set<String> {
         get { Set(UserDefaults.standard.stringArray(forKey: "sharedPageHosts") ?? []) }
