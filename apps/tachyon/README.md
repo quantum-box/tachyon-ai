@@ -130,7 +130,7 @@ gh secret set APP_STORE_CONNECT_PRIVATE_KEY < AuthKey_XXXXXXXXXX.p8
 
 署名用の証明書は保存しない。アーカイブは署名なし (Mac 版はエンタイトルメントを残すため ad-hoc 署名) で作り、書き出しのときに Xcode がクラウド上で管理する配布用証明書で署名する (API キーで認証)。
 
-アプリのアイコンは仮のもの。`./scripts/make-icons.sh` で作り直せる (Mac 用の各サイズも作る)。
+iOS と macOS はスパークル付きの Tachyon アイコンを使用する。共有の `icon-1024.png` を更新したら、`./scripts/make-icons.sh` で Mac 用の各サイズを再生成する。
 
 バージョン (`MARKETING_VERSION`) はプロジェクトの設定で上げる。同じバージョンのまま何度アップロードしてもよいが、App Store に出したバージョンより上である必要がある。
 
