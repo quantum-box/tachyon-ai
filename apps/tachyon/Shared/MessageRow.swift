@@ -7,6 +7,8 @@ struct MessageRow: View {
     let onOption: ((String) -> Void)?
     /// Shows a sent file in full; nil where there is nowhere to show it (iOS).
     var onOpenFile: ((Attachment) -> Void)? = nil
+    /// Shows a file another client stored; nil where there is nowhere to show it (iOS).
+    var onOpenSharedFile: ((SharedFile) -> Void)? = nil
     /// Shows the reply in full beside the chat; nil where there is nowhere to show it.
     var onOpenReply: (() -> Void)? = nil
 
@@ -21,7 +23,9 @@ struct MessageRow: View {
                     ForEach(message.attachments.indices, id: \.self) { index in
                         let name = message.attachments[index]
                         let file = message.files.indices.contains(index) ? message.files[index] : nil
-                        let chip = Label(name, systemImage: file?.isImage == true ? "photo" : "paperclip")
+                        let shared = message.sharedFiles.indices.contains(index) ? message.sharedFiles[index] : nil
+                        let isImage = file?.isImage ?? shared?.isImage ?? false
+                        let chip = Label(name, systemImage: isImage ? "photo" : "paperclip")
                             .font(.caption)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -30,6 +34,10 @@ struct MessageRow: View {
                             .glassEffect(.regular.interactive(), in: .capsule)
                         if let file, let onOpenFile {
                             Button { onOpenFile(file) } label: { chip }
+                                .buttonStyle(.plain)
+                                .help("右に表示")
+                        } else if let shared, let onOpenSharedFile {
+                            Button { onOpenSharedFile(shared) } label: { chip }
                                 .buttonStyle(.plain)
                                 .help("右に表示")
                         } else {

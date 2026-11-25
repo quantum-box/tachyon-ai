@@ -3,6 +3,16 @@ import Foundation
 /// Sessions are shared with other Tachyon clients (Field among them), whose messages
 /// carry text meant for the model, not the reader. This turns it back into what a
 /// person would see in that client.
+/// A file another client stored in Tachyon Storage and listed in a message.
+struct SharedFile: Equatable {
+    /// The storage key, e.g. `tn_…/agent-attachments/01….jpg`.
+    let id: String
+    let name: String
+    let contentType: String
+
+    var isImage: Bool { contentType.hasPrefix("image/") }
+}
+
 enum SharedSessionText {
     /// Field appends the files it uploaded to the user's text as a JSON note for the agent.
     private static let attachmentNote = try! NSRegularExpression(
@@ -20,18 +30,24 @@ enum SharedSessionText {
         options: [.dotMatchesLineSeparators])
     private static let blankLines = try! NSRegularExpression(pattern: #"\n{3,}"#)
 
-    /// The user's own words and the names of the files the note lists.
-    static func userMessage(_ raw: String) -> (text: String, attachments: [String]) {
+    /// The user's own words and the files the note lists.
+    static func userMessage(_ raw: String) -> (text: String, files: [SharedFile]) {
         let range = NSRange(raw.startIndex..., in: raw)
-        var names: [String] = []
+        var files: [SharedFile] = []
         for match in attachmentNote.matches(in: raw, range: range) {
             guard let json = Range(match.range(at: 1), in: raw).map({ String(raw[$0]) }),
                   let items = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]]
             else { continue }
-            names += items.compactMap { $0["name"] as? String }
+            files += items.compactMap { item in
+                guard let id = item["attachmentId"] as? String else { return nil }
+                return SharedFile(
+                    id: id,
+                    name: item["name"] as? String ?? (id as NSString).lastPathComponent,
+                    contentType: item["contentType"] as? String ?? "application/octet-stream")
+            }
         }
         let text = attachmentNote.stringByReplacingMatches(in: raw, range: range, withTemplate: "")
-        return (text.trimmingCharacters(in: .whitespacesAndNewlines), names)
+        return (text.trimmingCharacters(in: .whitespacesAndNewlines), files)
     }
 
     /// The reply without tool-call markup.

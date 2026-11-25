@@ -368,6 +368,23 @@ final class TachyonAPI {
         return (list, config.chatModel)
     }
 
+    // MARK: - Stored files
+
+    /// A short-lived link to a file in Tachyon Storage (Field keeps chat uploads there).
+    func storedFileURL(key: String) async throws -> URL {
+        let config = try await auth.config()
+        let request = try makeRequest(
+            config, "POST", "v1/storage/presigned-url",
+            body: ["key": key, "method": "GET", "tenant_id": config.operatorID, "expires_in_secs": 300])
+        let (data, response) = try await session.data(for: request)
+        try Self.check(response, data)
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let string = json["url"] as? String, let url = URL(string: string) else {
+            throw APIError.badResponse
+        }
+        return url
+    }
+
     // MARK: - History
 
     /// The user's conversations, newest first.

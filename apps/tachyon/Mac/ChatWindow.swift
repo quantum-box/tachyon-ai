@@ -382,6 +382,7 @@ private struct ChatView: View {
         transcript
             .safeAreaInset(edge: .bottom, spacing: 0) { composer }
             .frame(minWidth: Self.conversationMinWidth, minHeight: 420)
+            .background { ChatBackdrop() }
             .navigationTitle(currentTitle)
             .navigationSubtitle(model.currentProject?.name ?? "")
             // Files can also be dropped anywhere on the conversation.
@@ -396,6 +397,27 @@ private struct ChatView: View {
             return "Tachyon AI"
         }
         return name
+    }
+
+    /// Downloads a file Field stored and shows it in the side pane.
+    private func openSharedFile(_ file: SharedFile) {
+        // The pane shows the open conversation's tabs; if the user moves to another
+        // conversation before the file arrives, it no longer belongs there.
+        let session = model.sessionID
+        Task {
+            do {
+                let content = try await model.load(file)
+                guard model.sessionID == session else { return }
+                switch content {
+                case .file(let attachment): pane.open(attachment)
+                // The link expires in minutes, so the tab is not restored after a relaunch.
+                case .link(let url): pane.open(url, temporary: true)
+                }
+            } catch {
+                guard model.sessionID == session else { return }
+                model.attachmentError = "「\(file.name)」を開けませんでした: \(error.localizedDescription)"
+            }
+        }
     }
 
     private var transcript: some View {
@@ -419,6 +441,7 @@ private struct ChatView: View {
                                 onOption: message.id == model.messages.last?.id && !model.isRunning
                                     ? { model.send($0) } : nil,
                                 onOpenFile: { pane.open($0) },
+                                onOpenSharedFile: openSharedFile,
                                 onOpenReply: { openReply(message) })
                                 .transition(.scale(scale: 0.9, anchor: message.role == .user ? .bottomTrailing : .bottomLeading)
                                     .combined(with: .opacity))
@@ -649,5 +672,46 @@ private struct ProjectControl: View {
         .padding(.vertical, 7)
         .background(.quaternary, in: Capsule())
         .contentShape(Capsule())
+    }
+}
+
+/// Soft color behind the conversation, drifting slowly so the window does not look flat.
+/// Faint enough that the glass bubbles stay the focus; still when Reduce Motion is on.
+private struct ChatBackdrop: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        if reduceMotion {
+            mesh(at: 0)
+        } else {
+            // 20 fps is plenty for motion this slow.
+            TimelineView(.animation(minimumInterval: 1 / 20)) { context in
+                mesh(at: context.date.timeIntervalSinceReferenceDate)
+            }
+        }
+    }
+
+    private func mesh(at time: TimeInterval) -> some View {
+        // Each inner point circles on its own period, so the pattern never repeats exactly.
+        func drift(_ x: Float, _ y: Float, period: Double, phase: Double) -> SIMD2<Float> {
+            let angle = time / period * 2 * .pi + phase
+            return [x + Float(cos(angle)) * 0.12, y + Float(sin(angle)) * 0.10]
+        }
+        let opacity = colorScheme == .dark ? 0.32 : 0.22
+        return MeshGradient(
+            width: 3, height: 3,
+            points: [
+                [0, 0], drift(0.5, 0, period: 37, phase: 0), [1, 0],
+                drift(0, 0.5, period: 41, phase: 1), drift(0.5, 0.5, period: 29, phase: 2), drift(1, 0.5, period: 43, phase: 3),
+                [0, 1], drift(0.5, 1, period: 31, phase: 4), [1, 1],
+            ],
+            colors: ([
+                .indigo, .clear, .teal,
+                .clear, .purple, .clear,
+                .blue, .clear, .pink,
+            ] as [Color]).map { $0.opacity(opacity) })
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }
