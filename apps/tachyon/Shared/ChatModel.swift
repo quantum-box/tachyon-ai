@@ -9,6 +9,8 @@ struct ChatMessage: Identifiable {
     let id = UUID()
     let role: Role
     var text: String
+    /// An assistant reply as it arrived, before tool-call markup is hidden from `text`.
+    var raw = ""
     var failed = false
     /// Answers the agent offered to a question it asked.
     var options: [String] = []
@@ -40,15 +42,18 @@ struct Transcript {
     mutating func apply(_ event: AgentEvent) {
         switch event {
         case .user(let text):
-            messages.append(ChatMessage(role: .user, text: text))
+            // Sessions are shared with Field, which writes its uploads into the text.
+            let shown = SharedSessionText.userMessage(text)
+            messages.append(ChatMessage(role: .user, text: shown.text, attachments: shown.attachments))
             lastSource = nil
         case .text(let text, let source):
             let index = replyIndex()
             // A different kind of chunk is a new paragraph, not a continuation.
-            if let lastSource, lastSource != source, !messages[index].text.isEmpty {
-                messages[index].text += "\n\n"
+            if let lastSource, lastSource != source, !messages[index].raw.isEmpty {
+                messages[index].raw += "\n\n"
             }
-            messages[index].text += text
+            messages[index].raw += text
+            messages[index].text = SharedSessionText.reply(messages[index].raw)
             lastSource = source
         case .options(let options):
             messages[replyIndex()].options = options
@@ -57,10 +62,11 @@ struct Transcript {
             messages[index].usage = (messages[index].usage ?? TokenUsage()) + usage
         case .failure(let message):
             let index = replyIndex()
-            if !messages[index].text.isEmpty {
-                messages[index].text += "\n\n"
+            if !messages[index].raw.isEmpty {
+                messages[index].raw += "\n\n"
             }
-            messages[index].text += message
+            messages[index].raw += message
+            messages[index].text = SharedSessionText.reply(messages[index].raw)
             messages[index].failed = true
         case .activity, .openPage, .readPage, .workspace:
             break
