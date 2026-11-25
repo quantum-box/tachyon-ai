@@ -53,16 +53,20 @@ struct ConversationList: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .safeAreaInset(edge: .bottom) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             Button {
                 editingProject = Project(name: "")
             } label: {
                 Label("新規プロジェクト", systemImage: "folder.badge.plus")
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
+            // Rows scroll under the button; without a backdrop their text shows through it.
+            .background(.bar)
+            .overlay(alignment: .top) { Divider() }
         }
         .sheet(item: $editingProject) { project in
             ProjectEditor(project: project) { saved in
